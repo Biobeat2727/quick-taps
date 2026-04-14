@@ -62,8 +62,11 @@ function marbleProgress(m: MarbleState): number {
   if (m.finished) return 9999 + (m.placement ?? 0);
   if (m.act === 1) return m.y;
   if (m.act === 2) return m.y;
-  // act 3: closer to center = more progress
-  return 2000 + (1 - m.radius / 140) * 400;
+  // act 3: closer to funnel center = more progress
+  const dx = m.x - 195;
+  const dy = m.y - 2200;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  return 2000 + (1 - dist / 140) * 400;
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────

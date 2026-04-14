@@ -19,13 +19,15 @@ const ACT1_EXIT_Y = 800;
 const TUNNEL_HALF_WIDTH = 30; // tunnel is 60px wide, marble constrained within
 const ACT2_EXIT_Y = 2000;
 
-// Act 3
+// Act 3 — circular bowl
 const FUNNEL_CENTER_X = 195;
 const FUNNEL_CENTER_Y = 2200;
 const FUNNEL_OUTER_RADIUS = 140;
 const FUNNEL_HOLE_RADIUS = 20;
-const FUNNEL_RADIAL_ACCEL = 0.03; // inward pull (gravity along funnel wall)
-const FUNNEL_ENTRY_ANGLE = -Math.PI / 2; // marble enters at top of funnel rim
+const FUNNEL_WALL_DAMPING = 0.7;
+// Tangential kick at funnel entry to encourage orbiting.
+// Lanes A/B (left half) kick right (+x); C/D kick left (-x).
+const FUNNEL_ENTRY_TANGENTIAL = 3.0;
 
 // ─── Peg grid ─────────────────────────────────────────────────────────────────
 // 8 rows staggered. Even rows (0-indexed): 5 pegs. Odd rows: 4 pegs.
@@ -145,10 +147,10 @@ export type MarbleAct = 1 | 2 | 3;
 
 export interface MarbleState {
   id: string;
-  /** Cartesian position — valid in all acts */
+  /** Cartesian position */
   x: number;
   y: number;
-  /** Cartesian velocity — used in Acts 1 and 2 */
+  /** Cartesian velocity */
   vx: number;
   vy: number;
   /** 0.88–1.12, fixed for the whole race */
@@ -156,15 +158,6 @@ export interface MarbleState {
   act: MarbleAct;
   // ── Act 2 ──
   lane: LaneKey | null;
-  // ── Act 3 (polar) ──
-  /** Angle from funnel center (radians) */
-  angle: number;
-  /** Distance from funnel center (px) */
-  radius: number;
-  /** Radial velocity — negative means moving toward center */
-  vr: number;
-  /** L = r² × ω, signed — conserved through Act 3 */
-  angularMomentum: number;
   // ── Results ──
   finished: boolean;
   placement: number | null;
@@ -191,7 +184,7 @@ export function useMarblePhysics(): UseMarblePhysicsResult {
     placements.current = [];
     marbles.current = ids.map((id, i) => {
       // Spread entry x slightly so marbles don't stack at the exact centre.
-      const spreadX = FUNNEL_CENTER_X + (i - (ids.length - 1) / 2) * 4;
+      const spreadX = 195 + (i - (ids.length - 1) / 2) * 4;
       return {
         id,
         x: spreadX,
@@ -201,10 +194,6 @@ export function useMarblePhysics(): UseMarblePhysicsResult {
         speedMod: 0.88 + Math.random() * 0.24,
         act: 1 as MarbleAct,
         lane: null,
-        angle: 0,
-        radius: FUNNEL_OUTER_RADIUS,
-        vr: 0,
-        angularMomentum: 0,
         finished: false,
         placement: null,
       };
@@ -223,7 +212,6 @@ export function useMarblePhysics(): UseMarblePhysicsResult {
     }
 
     // ── Marble-marble collisions ─────────────────────────────────────────────
-    // Acts 1 & 2: elastic Cartesian collision (marbles carry real velocity in both)
     const act1 = ms.filter(m => m.act === 1 && !m.finished);
     for (let i = 0; i < act1.length; i++) {
       for (let j = i + 1; j < act1.length; j++) {
@@ -238,11 +226,11 @@ export function useMarblePhysics(): UseMarblePhysicsResult {
       }
     }
 
-    // Act 3: Cartesian nudge, then re-derive polar state
+    // Act 3 is fully Cartesian — same elastic collision resolver.
     const act3 = ms.filter(m => m.act === 3 && !m.finished);
     for (let i = 0; i < act3.length; i++) {
       for (let j = i + 1; j < act3.length; j++) {
-        resolveAct3Collision(act3[i], act3[j]);
+        resolveCartesianCollision(act3[i], act3[j]);
       }
     }
   }, []);
@@ -341,55 +329,64 @@ function stepAct2(m: MarbleState): void {
     m.vx = -Math.abs(m.vx) * WALL_DAMPING;
   }
 
-  // Transition to Act 3
+  // Transition to Act 3 — give tangential kick to encourage bowl orbiting.
+  // Velocity carries over; no position teleport.
   if (m.y >= ACT2_EXIT_Y) {
     m.act = 3;
-    m.radius = FUNNEL_OUTER_RADIUS;
-    m.angle = FUNNEL_ENTRY_ANGLE; // -π/2 → top of funnel rim
-    m.x = FUNNEL_CENTER_X + m.radius * Math.cos(m.angle);
-    m.y = FUNNEL_CENTER_Y + m.radius * Math.sin(m.angle);
-    m.vr = 0;
-    // Lanes A & B started on the left → clockwise spin; C & D → counter-clockwise.
     const spin = (m.lane === 'A' || m.lane === 'B') ? 1 : -1;
-    const vTangential = 2.5 * m.speedMod;
-    m.angularMomentum = spin * m.radius * vTangential;
+    m.vx += spin * FUNNEL_ENTRY_TANGENTIAL * m.speedMod;
   }
 }
 
-// ─── Act 3 — Funnel ───────────────────────────────────────────────────────────
+// ─── Act 3 — Circular bowl (wall-bounce physics) ──────────────────────────────
+// The funnel is a circular bowl: outer radius 140px centered at (195, 2200).
+// Marbles enter with their Act 2 velocity plus a tangential kick, continue
+// under gravity (0.05px/frame²), and bounce off the curved wall (damping 0.7).
+// Marble-marble elastic collisions are handled in step() using the same
+// Cartesian resolver as Acts 1 and 2.
+// Exit: once a marble reaches dist < FUNNEL_HOLE_RADIUS from center, it finishes.
 
 function stepAct3(m: MarbleState, placements: string[]): void {
-  // Inward radial pull (gravity component along funnel wall)
-  m.vr -= FUNNEL_RADIAL_ACCEL;
-  m.radius += m.vr;
+  // Gravity
+  m.vy += GRAVITY * m.speedMod;
 
-  // Outer wall bounce
-  if (m.radius >= FUNNEL_OUTER_RADIUS) {
-    m.radius = FUNNEL_OUTER_RADIUS;
-    m.vr = -Math.abs(m.vr) * WALL_DAMPING;
+  // Integrate
+  m.x += m.vx;
+  m.y += m.vy;
+
+  const dx = m.x - FUNNEL_CENTER_X;
+  const dy = m.y - FUNNEL_CENTER_Y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+
+  // Circular wall reflection
+  const wallR = FUNNEL_OUTER_RADIUS - MARBLE_RADIUS;
+  if (dist > wallR && dist > 0) {
+    const nx = dx / dist;
+    const ny = dy / dist;
+    // Push marble inside the wall
+    m.x = FUNNEL_CENTER_X + nx * wallR;
+    m.y = FUNNEL_CENTER_Y + ny * wallR;
+    // Reflect the outward velocity component and damp
+    const dot = m.vx * nx + m.vy * ny;
+    if (dot > 0) {
+      m.vx = (m.vx - 2 * dot * nx) * FUNNEL_WALL_DAMPING;
+      m.vy = (m.vy - 2 * dot * ny) * FUNNEL_WALL_DAMPING;
+    }
   }
 
-  // Angular velocity from conserved angular momentum: ω = L / r²
-  const omega = m.angularMomentum / (m.radius * m.radius);
-  m.angle += omega;
-
-  // Update Cartesian from polar
-  m.x = FUNNEL_CENTER_X + m.radius * Math.cos(m.angle);
-  m.y = FUNNEL_CENTER_Y + m.radius * Math.sin(m.angle);
-
   // Exit through hole
-  if (m.radius <= FUNNEL_HOLE_RADIUS) {
+  if (dist < FUNNEL_HOLE_RADIUS) {
     m.finished = true;
     m.placement = placements.length + 1;
     placements.push(m.id);
     m.x = FUNNEL_CENTER_X;
-    m.y = FUNNEL_CENTER_Y + FUNNEL_HOLE_RADIUS; // drop to hole
+    m.y = FUNNEL_CENTER_Y;
   }
 }
 
 // ─── Collision helpers ────────────────────────────────────────────────────────
 
-/** Elastic Cartesian collision, equal mass (used in Acts 1 and 2). */
+/** Elastic Cartesian collision, equal mass (used in Acts 1, 2, and 3). */
 function resolveCartesianCollision(a: MarbleState, b: MarbleState): void {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
@@ -416,34 +413,4 @@ function resolveCartesianCollision(a: MarbleState, b: MarbleState): void {
   a.vy += dot * ny;
   b.vx -= dot * nx;
   b.vy -= dot * ny;
-}
-
-/**
- * Act 3 collision — nudge in Cartesian space, re-derive polar state.
- * Angular momentum is not exchanged; only positions are corrected.
- */
-function resolveAct3Collision(a: MarbleState, b: MarbleState): void {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const distSq = dx * dx + dy * dy;
-  const minDist = MARBLE_RADIUS * 2;
-  if (distSq >= minDist * minDist || distSq === 0) return;
-
-  const dist = Math.sqrt(distSq);
-  const nx = dx / dist;
-  const ny = dy / dist;
-  const overlap = (minDist - dist) / 2;
-
-  a.x -= nx * overlap;
-  a.y -= ny * overlap;
-  b.x += nx * overlap;
-  b.y += ny * overlap;
-
-  // Re-derive polar from updated Cartesian
-  for (const m of [a, b]) {
-    const mdx = m.x - FUNNEL_CENTER_X;
-    const mdy = m.y - FUNNEL_CENTER_Y;
-    m.radius = Math.max(FUNNEL_HOLE_RADIUS, Math.sqrt(mdx * mdx + mdy * mdy));
-    m.angle  = Math.atan2(mdy, mdx);
-  }
 }
