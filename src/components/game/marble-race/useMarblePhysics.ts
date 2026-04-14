@@ -16,7 +16,7 @@ const PEG_LATERAL_IMPULSE = 2;
 const ACT1_EXIT_Y = 800;
 
 // Act 2
-const ACT2_BASE_SPEED = 1.5; // px/frame along path
+const TUNNEL_HALF_WIDTH = 30; // tunnel is 60px wide, marble constrained within
 const ACT2_EXIT_Y = 2000;
 
 // Act 3
@@ -43,84 +43,96 @@ const PEGS: ReadonlyArray<{ x: number; y: number }> = (() => {
   return pegs;
 })();
 
-// ─── Lane paths ───────────────────────────────────────────────────────────────
-// Waypoints [x, y] define the cubic piecewise-linear path for each lane.
+// ─── Tunnel geometry ──────────────────────────────────────────────────────────
+// Each lane is a physical tunnel. Walls = centerX ± TUNNEL_HALF_WIDTH.
+// Center positions at key y values mirror the crossing choreography:
+//   y=800:  A=80,  B=160, C=230, D=310  (Act 1 exit spread)
+//   y=1000: same   (parallel run before cross 1)
+//   y=1100: A=230, B=310, C=80,  D=160  (cross 1 complete — A↔C, B↔D)
+//   y=1300: same   (parallel run before cross 2)
+//   y=1400: A=160, B=80,  C=310, D=230  (cross 2 complete — 180° swirl)
+//   y=1600: same   (parallel run before cross 3)
+//   y=1700: A=80,  B=160, C=230, D=310  (cross 3 complete — A↔B, C↔D)
+//   y=1900: same   (parallel run before funnel)
+//   y=2000: all    converge to x=195
 //
-// Crossings (using the marble's original lane label, not its physical position):
-//   Entry  y=800:  A=80,  B=160, C=230, D=310
-//   Cross1 y=1100: A=230, B=310, C=80,  D=160  (A↔C, B↔D)
-//   Cross2 y=1400: A=160, B=80,  C=310, D=230  (180° clockwise swirl)
-//   Cross3 y=1700: A=80,  B=160, C=230, D=310  (A↔B, C↔D → back to original)
-//   Exit   y=2000: all converge to x=195
+// At crossing zones (y=1000–1100, 1300–1400, 1600–1700) the center x shifts
+// linearly, so the tunnel walls shift with it. Tunnels from two lanes share the
+// same spatial region mid-crossing — marbles follow whichever wall they contact.
 
 type LaneKey = 'A' | 'B' | 'C' | 'D';
-type Waypoint = readonly [number, number];
 
-const LANE_PATHS: Readonly<Record<LaneKey, ReadonlyArray<Waypoint>>> = {
+const TUNNEL_WAYPOINTS: Readonly<Record<LaneKey, ReadonlyArray<{ y: number; cx: number }>>> = {
   A: [
-    [80,  800], [80,  1000], [230, 1100],
-    [230, 1300], [160, 1400], [160, 1600],
-    [80,  1700], [80,  1900], [195, 2000],
+    { y: 800,  cx: 80  },
+    { y: 1000, cx: 80  },
+    { y: 1100, cx: 230 },
+    { y: 1300, cx: 230 },
+    { y: 1400, cx: 160 },
+    { y: 1600, cx: 160 },
+    { y: 1700, cx: 80  },
+    { y: 1900, cx: 80  },
+    { y: 2000, cx: 195 },
   ],
   B: [
-    [160, 800], [160, 1000], [310, 1100],
-    [310, 1300], [80,  1400], [80,  1600],
-    [160, 1700], [160, 1900], [195, 2000],
+    { y: 800,  cx: 160 },
+    { y: 1000, cx: 160 },
+    { y: 1100, cx: 310 },
+    { y: 1300, cx: 310 },
+    { y: 1400, cx: 80  },
+    { y: 1600, cx: 80  },
+    { y: 1700, cx: 160 },
+    { y: 1900, cx: 160 },
+    { y: 2000, cx: 195 },
   ],
   C: [
-    [230, 800], [230, 1000], [80,  1100],
-    [80,  1300], [310, 1400], [310, 1600],
-    [230, 1700], [230, 1900], [195, 2000],
+    { y: 800,  cx: 230 },
+    { y: 1000, cx: 230 },
+    { y: 1100, cx: 80  },
+    { y: 1300, cx: 80  },
+    { y: 1400, cx: 310 },
+    { y: 1600, cx: 310 },
+    { y: 1700, cx: 230 },
+    { y: 1900, cx: 230 },
+    { y: 2000, cx: 195 },
   ],
   D: [
-    [310, 800], [310, 1000], [160, 1100],
-    [160, 1300], [230, 1400], [230, 1600],
-    [310, 1700], [310, 1900], [195, 2000],
+    { y: 800,  cx: 310 },
+    { y: 1000, cx: 310 },
+    { y: 1100, cx: 160 },
+    { y: 1300, cx: 160 },
+    { y: 1400, cx: 230 },
+    { y: 1600, cx: 230 },
+    { y: 1700, cx: 310 },
+    { y: 1900, cx: 310 },
+    { y: 2000, cx: 195 },
   ],
 };
 
-// Precompute cumulative segment lengths for t-parameter interpolation.
-const LANE_CUM_LENGTHS: Readonly<Record<LaneKey, ReadonlyArray<number>>> = (() => {
-  const result = {} as Record<LaneKey, number[]>;
-  for (const key of ['A', 'B', 'C', 'D'] as LaneKey[]) {
-    const wps = LANE_PATHS[key];
-    const cum: number[] = [0];
-    for (let i = 1; i < wps.length; i++) {
-      const dx = wps[i][0] - wps[i - 1][0];
-      const dy = wps[i][1] - wps[i - 1][1];
-      cum.push(cum[i - 1] + Math.sqrt(dx * dx + dy * dy));
-    }
-    result[key] = cum;
-  }
-  return result;
-})();
+function getTunnelWalls(lane: LaneKey, y: number): { left: number; right: number } {
+  const wps = TUNNEL_WAYPOINTS[lane];
 
-function lanePathLength(lane: LaneKey): number {
-  const cum = LANE_CUM_LENGTHS[lane];
-  return cum[cum.length - 1];
-}
-
-function interpolateLane(lane: LaneKey, t: number): { x: number; y: number } {
-  const wps = LANE_PATHS[lane];
-  const cum = LANE_CUM_LENGTHS[lane];
-  const total = cum[cum.length - 1];
-  const target = Math.max(0, Math.min(1, t)) * total;
-
-  for (let i = 1; i < cum.length; i++) {
-    if (cum[i] >= target) {
-      const segLen = cum[i] - cum[i - 1];
-      const u = segLen > 0 ? (target - cum[i - 1]) / segLen : 0;
-      return {
-        x: wps[i - 1][0] + u * (wps[i][0] - wps[i - 1][0]),
-        y: wps[i - 1][1] + u * (wps[i][1] - wps[i - 1][1]),
-      };
-    }
+  if (y <= wps[0].y) {
+    return { left: wps[0].cx - TUNNEL_HALF_WIDTH, right: wps[0].cx + TUNNEL_HALF_WIDTH };
   }
   const last = wps[wps.length - 1];
-  return { x: last[0], y: last[1] };
+  if (y >= last.y) {
+    return { left: last.cx - TUNNEL_HALF_WIDTH, right: last.cx + TUNNEL_HALF_WIDTH };
+  }
+
+  for (let i = 1; i < wps.length; i++) {
+    if (y <= wps[i].y) {
+      const t = (y - wps[i - 1].y) / (wps[i].y - wps[i - 1].y);
+      const cx = wps[i - 1].cx + t * (wps[i].cx - wps[i - 1].cx);
+      return { left: cx - TUNNEL_HALF_WIDTH, right: cx + TUNNEL_HALF_WIDTH };
+    }
+  }
+
+  return { left: last.cx - TUNNEL_HALF_WIDTH, right: last.cx + TUNNEL_HALF_WIDTH };
 }
 
 function assignLane(x: number): LaneKey {
+  // Thresholds are midpoints between adjacent tunnel walls.
   if (x < 120) return 'A';
   if (x < 195) return 'B';
   if (x < 270) return 'C';
@@ -136,7 +148,7 @@ export interface MarbleState {
   /** Cartesian position — valid in all acts */
   x: number;
   y: number;
-  /** Cartesian velocity — used in Act 1 */
+  /** Cartesian velocity — used in Acts 1 and 2 */
   vx: number;
   vy: number;
   /** 0.88–1.12, fixed for the whole race */
@@ -144,8 +156,6 @@ export interface MarbleState {
   act: MarbleAct;
   // ── Act 2 ──
   lane: LaneKey | null;
-  /** Progress along lane path, 0–1 */
-  laneT: number;
   // ── Act 3 (polar) ──
   /** Angle from funnel center (radians) */
   angle: number;
@@ -191,7 +201,6 @@ export function useMarblePhysics(): UseMarblePhysicsResult {
         speedMod: 0.88 + Math.random() * 0.24,
         act: 1 as MarbleAct,
         lane: null,
-        laneT: 0,
         angle: 0,
         radius: FUNNEL_OUTER_RADIUS,
         vr: 0,
@@ -214,7 +223,7 @@ export function useMarblePhysics(): UseMarblePhysicsResult {
     }
 
     // ── Marble-marble collisions ─────────────────────────────────────────────
-    // Act 1: elastic Cartesian collision
+    // Acts 1 & 2: elastic Cartesian collision (marbles carry real velocity in both)
     const act1 = ms.filter(m => m.act === 1 && !m.finished);
     for (let i = 0; i < act1.length; i++) {
       for (let j = i + 1; j < act1.length; j++) {
@@ -222,11 +231,10 @@ export function useMarblePhysics(): UseMarblePhysicsResult {
       }
     }
 
-    // Act 2: same-lane separation (marbles on different lanes pass through crossings)
     const act2 = ms.filter(m => m.act === 2 && !m.finished);
     for (let i = 0; i < act2.length; i++) {
       for (let j = i + 1; j < act2.length; j++) {
-        resolveAct2LaneCollision(act2[i], act2[j]);
+        resolveCartesianCollision(act2[i], act2[j]);
       }
     }
 
@@ -291,45 +299,59 @@ function stepAct1(m: MarbleState): void {
     }
   }
 
-  // Transition to Act 2
+  // Transition to Act 2 — velocity carries over, position unchanged
   if (m.y >= ACT1_EXIT_Y) {
     m.act = 2;
     m.lane = assignLane(m.x);
-    m.laneT = 0;
-    m.vx = 0;
-    m.vy = 0;
-    const start = interpolateLane(m.lane, 0);
-    m.x = start.x;
-    m.y = start.y;
   }
 }
 
-// ─── Act 2 — Crossing lanes ───────────────────────────────────────────────────
+// ─── Act 2 — Crossing tunnels (wall-bounce physics) ───────────────────────────
+// Marbles move under gravity with their Act 1 velocity, bouncing off the left
+// and right walls of their assigned tunnel. Tunnel walls shift laterally at
+// crossing zones, guiding marbles through the choreography naturally.
+// At crossings the tunnels share physical space — marble-marble elastic
+// collisions (applied in step()) determine who goes where.
 
 function stepAct2(m: MarbleState): void {
   if (!m.lane) return;
 
-  const dtPerFrame = (ACT2_BASE_SPEED * m.speedMod) / lanePathLength(m.lane);
-  m.laneT = Math.min(1, m.laneT + dtPerFrame);
+  // Gravity
+  m.vy += GRAVITY * m.speedMod;
 
-  const pos = interpolateLane(m.lane, m.laneT);
-  m.x = pos.x;
-  m.y = pos.y;
+  // Speed cap
+  const speed = Math.sqrt(m.vx * m.vx + m.vy * m.vy);
+  if (speed > MAX_VELOCITY) {
+    const s = MAX_VELOCITY / speed;
+    m.vx *= s;
+    m.vy *= s;
+  }
+
+  // Integrate
+  m.x += m.vx;
+  m.y += m.vy;
+
+  // Tunnel wall bounce
+  const { left, right } = getTunnelWalls(m.lane, m.y);
+  if (m.x - MARBLE_RADIUS < left) {
+    m.x = left + MARBLE_RADIUS;
+    m.vx = Math.abs(m.vx) * WALL_DAMPING;
+  } else if (m.x + MARBLE_RADIUS > right) {
+    m.x = right - MARBLE_RADIUS;
+    m.vx = -Math.abs(m.vx) * WALL_DAMPING;
+  }
 
   // Transition to Act 3
-  if (m.laneT >= 1) {
+  if (m.y >= ACT2_EXIT_Y) {
     m.act = 3;
-    // All lanes exit at (195, 2000); place marble on funnel outer rim directly above centre.
     m.radius = FUNNEL_OUTER_RADIUS;
-    m.angle = FUNNEL_ENTRY_ANGLE; // -π/2 → top of funnel rim: (195, 2060)
+    m.angle = FUNNEL_ENTRY_ANGLE; // -π/2 → top of funnel rim
     m.x = FUNNEL_CENTER_X + m.radius * Math.cos(m.angle);
     m.y = FUNNEL_CENTER_Y + m.radius * Math.sin(m.angle);
     m.vr = 0;
-    // Lanes A & B entered from the left → clockwise (+1)
-    // Lanes C & D entered from the right → counter-clockwise (-1)
+    // Lanes A & B started on the left → clockwise spin; C & D → counter-clockwise.
     const spin = (m.lane === 'A' || m.lane === 'B') ? 1 : -1;
     const vTangential = 2.5 * m.speedMod;
-    // L = r² × ω = r × v_tangential
     m.angularMomentum = spin * m.radius * vTangential;
   }
 }
@@ -367,7 +389,7 @@ function stepAct3(m: MarbleState, placements: string[]): void {
 
 // ─── Collision helpers ────────────────────────────────────────────────────────
 
-/** Elastic Cartesian collision, equal mass (used in Act 1). */
+/** Elastic Cartesian collision, equal mass (used in Acts 1 and 2). */
 function resolveCartesianCollision(a: MarbleState, b: MarbleState): void {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
@@ -394,37 +416,6 @@ function resolveCartesianCollision(a: MarbleState, b: MarbleState): void {
   a.vy += dot * ny;
   b.vx -= dot * nx;
   b.vy -= dot * ny;
-}
-
-/**
- * Act 2 same-lane collision.
- * Cross-lane collisions are intentionally ignored — marbles on different lane
- * paths pass through crossing zones on separate chutes.
- */
-function resolveAct2LaneCollision(a: MarbleState, b: MarbleState): void {
-  if (a.lane !== b.lane || !a.lane) return;
-
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const distSq = dx * dx + dy * dy;
-  const minDist = MARBLE_RADIUS * 2;
-  if (distSq >= minDist * minDist || distSq === 0) return;
-
-  const dist = Math.sqrt(distSq);
-  const needed = minDist - dist;
-  // Push apart along the lane by adjusting laneT
-  const totalLen = lanePathLength(a.lane);
-  const dt = (needed / 2) / totalLen;
-
-  // The marble further along the path (higher laneT) is "in front"
-  const [front, rear] = a.laneT >= b.laneT ? [a, b] : [b, a];
-  front.laneT = Math.min(1, front.laneT + dt);
-  rear.laneT  = Math.max(0, rear.laneT  - dt);
-
-  const fp = interpolateLane(front.lane!, front.laneT);
-  const rp = interpolateLane(rear.lane!,  rear.laneT);
-  front.x = fp.x; front.y = fp.y;
-  rear.x  = rp.x; rear.y  = rp.y;
 }
 
 /**
