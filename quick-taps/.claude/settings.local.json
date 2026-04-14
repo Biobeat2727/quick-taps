@@ -9,7 +9,8 @@
       "mcp__ide__getDiagnostics",
       "Bash(wc:*)",
       "Bash(vercel:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(python:*)"
     ]
   }
 }
