@@ -19,15 +19,15 @@ const ACT1_EXIT_Y = 800;
 const TUNNEL_HALF_WIDTH = 30; // tunnel is 60px wide, marble constrained within
 const ACT2_EXIT_Y = 2000;
 
-// Act 3 — circular bowl
+// Act 3 — shrinking boundary funnel
 const FUNNEL_CENTER_X = 195;
 const FUNNEL_CENTER_Y = 2200;
 const FUNNEL_OUTER_RADIUS = 140;
 const FUNNEL_HOLE_RADIUS = 20;
 const FUNNEL_WALL_DAMPING = 0.7;
-// Tangential kick at funnel entry to encourage orbiting.
-// Lanes A/B (left half) kick right (+x); C/D kick left (-x).
-const FUNNEL_ENTRY_TANGENTIAL = 3.0;
+// Primary tuning knobs:
+const FUNNEL_SHRINK_RATE = 0.04;        // px/frame — boundary closes inward
+const FUNNEL_TANGENTIAL_FRICTION = 0.995; // multiplied against tangential speed each frame
 
 // ─── Peg grid ─────────────────────────────────────────────────────────────────
 // 8 rows staggered. Even rows (0-indexed): 5 pegs. Odd rows: 4 pegs.
@@ -158,6 +158,9 @@ export interface MarbleState {
   act: MarbleAct;
   // ── Act 2 ──
   lane: LaneKey | null;
+  // ── Act 3 ──
+  /** Per-marble shrinking boundary radius; initialized to FUNNEL_OUTER_RADIUS on entry */
+  funnelR: number;
   // ── Results ──
   finished: boolean;
   placement: number | null;
@@ -194,6 +197,7 @@ export function useMarblePhysics(): UseMarblePhysicsResult {
         speedMod: 0.88 + Math.random() * 0.24,
         act: 1 as MarbleAct,
         lane: null,
+        funnelR: 0,
         finished: false,
         placement: null,
       };
@@ -329,48 +333,61 @@ function stepAct2(m: MarbleState): void {
     m.vx = -Math.abs(m.vx) * WALL_DAMPING;
   }
 
-  // Transition to Act 3 — give tangential kick to encourage bowl orbiting.
-  // Velocity carries over; no position teleport.
+  // Transition to Act 3 — velocity carries over unchanged; boundary starts at 140.
   if (m.y >= ACT2_EXIT_Y) {
     m.act = 3;
-    const spin = (m.lane === 'A' || m.lane === 'B') ? 1 : -1;
-    m.vx += spin * FUNNEL_ENTRY_TANGENTIAL * m.speedMod;
+    m.funnelR = FUNNEL_OUTER_RADIUS;
   }
 }
 
-// ─── Act 3 — Circular bowl (wall-bounce physics) ──────────────────────────────
-// The funnel is a circular bowl: outer radius 140px centered at (195, 2200).
-// Marbles enter with their Act 2 velocity plus a tangential kick, continue
-// under gravity (0.05px/frame²), and bounce off the curved wall (damping 0.7).
-// Marble-marble elastic collisions are handled in step() using the same
-// Cartesian resolver as Acts 1 and 2.
-// Exit: once a marble reaches dist < FUNNEL_HOLE_RADIUS from center, it finishes.
+// ─── Act 3 — Shrinking boundary funnel ───────────────────────────────────────
+// Each marble has its own boundary radius (funnelR) that closes at FUNNEL_SHRINK_RATE
+// px/frame. The wall squeezes every marble toward the hole regardless of tangential
+// speed — no timeout fallback needed. Two tuning knobs: FUNNEL_SHRINK_RATE (how fast
+// the boundary closes) and FUNNEL_TANGENTIAL_FRICTION (how quickly spin bleeds off).
 
 function stepAct3(m: MarbleState, placements: string[]): void {
+  // Shrink this marble's personal boundary
+  m.funnelR -= FUNNEL_SHRINK_RATE;
+
   // Gravity
   m.vy += GRAVITY * m.speedMod;
+
+  // Tangential friction — decompose velocity, damp only the tangential component
+  const dx0 = m.x - FUNNEL_CENTER_X;
+  const dy0 = m.y - FUNNEL_CENTER_Y;
+  const d0 = Math.sqrt(dx0 * dx0 + dy0 * dy0);
+  if (d0 > 0) {
+    const nx0 = dx0 / d0;
+    const ny0 = dy0 / d0;
+    const vr0 = m.vx * nx0 + m.vy * ny0;          // radial component (scalar)
+    const vtx = m.vx - vr0 * nx0;                  // tangential vector
+    const vty = m.vy - vr0 * ny0;
+    m.vx = vr0 * nx0 + vtx * FUNNEL_TANGENTIAL_FRICTION;
+    m.vy = vr0 * ny0 + vty * FUNNEL_TANGENTIAL_FRICTION;
+  }
 
   // Integrate
   m.x += m.vx;
   m.y += m.vy;
 
+  // Shrinking boundary — push marble inside and reflect radial velocity
   const dx = m.x - FUNNEL_CENTER_X;
   const dy = m.y - FUNNEL_CENTER_Y;
-  const dist = Math.sqrt(dx * dx + dy * dy);
+  let dist = Math.sqrt(dx * dx + dy * dy);
+  const wallR = Math.max(0, m.funnelR - MARBLE_RADIUS);
 
-  // Circular wall reflection
-  const wallR = FUNNEL_OUTER_RADIUS - MARBLE_RADIUS;
   if (dist > wallR && dist > 0) {
     const nx = dx / dist;
     const ny = dy / dist;
-    // Push marble inside the wall
     m.x = FUNNEL_CENTER_X + nx * wallR;
     m.y = FUNNEL_CENTER_Y + ny * wallR;
-    // Reflect the outward velocity component and damp
-    const dot = m.vx * nx + m.vy * ny;
-    if (dot > 0) {
-      m.vx = (m.vx - 2 * dot * nx) * FUNNEL_WALL_DAMPING;
-      m.vy = (m.vy - 2 * dot * ny) * FUNNEL_WALL_DAMPING;
+    dist = wallR;
+    // Reflect only the outward radial component; tangential is unchanged
+    const vr = m.vx * nx + m.vy * ny;
+    if (vr > 0) {
+      m.vx -= (1 + FUNNEL_WALL_DAMPING) * vr * nx;
+      m.vy -= (1 + FUNNEL_WALL_DAMPING) * vr * ny;
     }
   }
 
