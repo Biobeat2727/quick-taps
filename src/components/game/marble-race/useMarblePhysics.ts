@@ -333,10 +333,23 @@ function stepAct2(m: MarbleState): void {
     m.vx = -Math.abs(m.vx) * WALL_DAMPING;
   }
 
-  // Transition to Act 3 — velocity carries over unchanged; boundary starts at 140.
-  if (m.y >= ACT2_EXIT_Y) {
+  // Transition to Act 3 at the funnel rim (y = FUNNEL_CENTER_Y - FUNNEL_OUTER_RADIUS = 2060).
+  // Discard Act 2 velocity and assign a clean tangential orbit velocity instead.
+  if (m.y >= FUNNEL_CENTER_Y - FUNNEL_OUTER_RADIUS) {
     m.act = 3;
     m.funnelR = FUNNEL_OUTER_RADIUS;
+    // Angle from funnel center to the marble's entry position.
+    const entryAngle = Math.atan2(m.y - FUNNEL_CENTER_Y, m.x - FUNNEL_CENTER_X);
+    const orbitSpeed = 3;
+    // In screen coords (y-down): CW tangent = (-sinθ, cosθ), CCW = (sinθ, -cosθ).
+    // Left of center → CCW; right of center → CW.
+    if (m.x < FUNNEL_CENTER_X) {
+      m.vx = Math.sin(entryAngle) * orbitSpeed;
+      m.vy = -Math.cos(entryAngle) * orbitSpeed;
+    } else {
+      m.vx = -Math.sin(entryAngle) * orbitSpeed;
+      m.vy = Math.cos(entryAngle) * orbitSpeed;
+    }
   }
 }
 
