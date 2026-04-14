@@ -1,0 +1,20 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Reserved for leaderboard persistence — not used in v1
+model QtScore {
+  id         String   @id @default(cuid())
+  game       String
+  playerName String
+  placement  Int
+  sessionId  String
+  createdAt  DateTime @default(now())
+
+  @@map("qt_scores")
+}
