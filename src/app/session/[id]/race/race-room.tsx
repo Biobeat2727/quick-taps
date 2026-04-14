@@ -82,6 +82,13 @@ export default function RaceRoom({ sessionId }: Props) {
     );
   }
 
+  const handleRaceFinished = () => {
+    // Only the session creator (players[0]) deletes the session
+    if (!isProjector && players[0] && myPlayerId === players[0].id) {
+      void fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' });
+    }
+  };
+
   return (
     <MarbleRace
       players={players}
@@ -89,6 +96,7 @@ export default function RaceRoom({ sessionId }: Props) {
       isProjector={isProjector}
       onLeave={() => router.push('/')}
       onRaceAgain={() => router.push('/')}
+      onRaceFinished={handleRaceFinished}
     />
   );
 }

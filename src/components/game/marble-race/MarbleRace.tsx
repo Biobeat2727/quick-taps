@@ -32,6 +32,7 @@ interface Props {
   isProjector?: boolean;
   onLeave: () => void;
   onRaceAgain: () => void;
+  onRaceFinished?: () => void;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -266,7 +267,7 @@ function ProjectorLeaderboardShell({
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function MarbleRace({
-  players, myPlayerId, isProjector = false, onLeave, onRaceAgain,
+  players, myPlayerId, isProjector = false, onLeave, onRaceAgain, onRaceFinished,
 }: Props) {
   const [phase, setPhase] = useState<Phase>('countdown');
   const [countVal, setCountVal] = useState<number | null>(3);
@@ -341,6 +342,7 @@ export default function MarbleRace({
           .filter((p): p is Participant => p !== undefined);
         setFinalRanking(ranked);
         setPhase('finished');
+        onRaceFinished?.();
         return;
       }
 
