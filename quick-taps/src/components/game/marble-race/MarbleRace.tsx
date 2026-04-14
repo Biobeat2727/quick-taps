@@ -61,7 +61,7 @@ function ordinal(n: number): string {
 function marbleProgress(m: MarbleState): number {
   if (m.finished) return 9999 + (m.placement ?? 0);
   if (m.act === 1) return m.y;
-  if (m.act === 2) return 800 + m.laneT * 1200;
+  if (m.act === 2) return m.y;
   // act 3: closer to center = more progress
   return 2000 + (1 - m.radius / 140) * 400;
 }
