@@ -55,7 +55,8 @@ interface Props {
 // the marble traces its spiral inward.
 const FUNNEL_ENTRY_Z = 230;
 const FUNNEL_CENTER_Z = 244;
-const FUNNEL_ZOOM = 8; // fills screen with the funnel interior; trim the outer rim is fine
+// Zoom is dynamic: starts wide (5) so the marble is always on-screen at the rim,
+// then tightens to 8 as the marble spirals toward the funnel center.
 
 function CameraRig({
   marbleRefs,
@@ -85,18 +86,21 @@ function CameraRig({
       if (marbleZ >= FUNNEL_ENTRY_Z) inFunnelRef.current = true;
 
       if (inFunnelRef.current) {
-        // Head-on view: camera sits just outside the funnel mouth (z=230),
-        // looking along +Z into the funnel. On screen: X horizontal, Y vertical.
-        // near=1 clips the glass tubes (z≤222) and outer walls (z≤230) that are
-        // behind this camera position, leaving only the funnel in view.
-        camera.near = 1;
-        camera.far  = 150;
+        // Head-on view: camera sits just outside the funnel mouth, looking along
+        // +Z. near=0.1 clips geometry behind the camera without cutting off the
+        // marble when it bounces near the funnel entrance.
+        camera.near = 0.1;
+        camera.far  = 2000;
         tPosY  = 0;
-        tPosZ  = 225;          // past the glass tubes (end at z=222), before funnel mouth (z=230)
+        tPosZ  = 225;
         tLookZ = FUNNEL_CENTER_Z;
-        tUpY   = 1;            // standard Y-up for this orientation
+        tUpY   = 1;
         tUpZ   = 0;
-        tZoom  = FUNNEL_ZOOM;
+        // Wide zoom (5) when marble is at the funnel rim so it stays on-screen;
+        // tightens to 8 as it spirals toward the center.
+        const mPos = marbleRefs.current[myIdx]?.translation();
+        const r = mPos ? Math.sqrt(mPos.x * mPos.x + mPos.y * mPos.y) : 40;
+        tZoom = 5 + 3 * Math.max(0, 1 - r / 20);
       } else {
         // Side view: camera above, looking straight down, track runs top→bottom
         tPosY  = 50;
@@ -116,7 +120,7 @@ function CameraRig({
       tZoom  = 12;
     }
 
-    const α = 0.06;
+    const α = inFunnelRef.current ? 0.1 : 0.06; // faster sweep once in funnel
     posYRef.current  += (tPosY  - posYRef.current)  * α;
     posZRef.current  += (tPosZ  - posZRef.current)  * α;
     lookZRef.current += (tLookZ - lookZRef.current) * α;
@@ -190,7 +194,7 @@ function Funnel() {
       position={[0, 0, 244]}
       rotation={[Math.PI / 2, 0, 0]}
       friction={0.04}
-      restitution={0.75}
+      restitution={0.4}
     >
       <TrimeshCollider args={[physVerts, physIdx]} />
       <mesh geometry={visGeom} receiveShadow>
@@ -210,14 +214,17 @@ function GameLoop({
   myIdx,
   hudRef,
   onAllFinished,
+  onMarbleFinish,
 }: {
   marbleRefs: React.RefObject<(RapierRigidBody | null)[]>;
   participants: Participant[];
   myIdx: number;
   hudRef: React.RefObject<HTMLDivElement | null>;
   onAllFinished: (ranking: Participant[]) => void;
+  onMarbleFinish?: (color: string) => void;
 }) {
   const finishedSet = useRef(new Set<number>());
+  const enteredFunnelSet = useRef(new Set<number>());
   const placementsRef = useRef<string[]>([]);
   const doneRef = useRef(false);
 
@@ -226,12 +233,29 @@ function GameLoop({
 
     const rbs = marbleRefs.current;
 
-    // Finish detection — marble has fallen through funnel tip
+    // Finish + escape detection
     for (let i = 0; i < participants.length; i++) {
       if (finishedSet.current.has(i)) continue;
       const rb = rbs[i];
       if (!rb) continue;
-      if (rb.translation().z >= 258) {
+      const pos = rb.translation();
+
+      // Track funnel entry
+      if (pos.z >= 225) enteredFunnelSet.current.add(i);
+
+      // Normal finish: passed through the funnel tip
+      if (pos.z >= 258) {
+        finishedSet.current.add(i);
+        placementsRef.current.push(participants[i].id);
+        onMarbleFinish?.(participants[i].color);
+        continue;
+      }
+
+      // Escape: entered funnel then bounced back out or went out of world bounds
+      if (
+        enteredFunnelSet.current.has(i) &&
+        (pos.z < 218 || Math.abs(pos.x) > 50 || Math.abs(pos.y) > 50)
+      ) {
         finishedSet.current.add(i);
         placementsRef.current.push(participants[i].id);
       }
@@ -285,6 +309,8 @@ export default function MarbleRaceScene({
 
   const marbleRefs = useRef<(RapierRigidBody | null)[]>(Array(participants.length).fill(null));
   const hudRef = useRef<HTMLDivElement>(null);
+  const [burst, setBurst] = useState<{ color: string; key: number } | null>(null);
+  const burstKeyRef = useRef(0);
 
   // Stable per-race random values
   const marbleStarts = useMemo<[number, number, number][]>(() =>
@@ -326,6 +352,10 @@ export default function MarbleRaceScene({
     setPhase('finished');
     onRaceFinished?.();
   }, [onRaceFinished]);
+
+  const handleMarbleFinish = useCallback((color: string) => {
+    setBurst({ color, key: ++burstKeyRef.current });
+  }, []);
 
   if (phase === 'finished') {
     return (
@@ -442,6 +472,7 @@ export default function MarbleRaceScene({
             myIdx={myIdx}
             hudRef={hudRef}
             onAllFinished={handleAllFinished}
+            onMarbleFinish={handleMarbleFinish}
           />
 
         </Physics>
@@ -449,6 +480,26 @@ export default function MarbleRaceScene({
 
       {/* Countdown overlay */}
       {phase === 'countdown' && <CountdownOverlay val={countVal} />}
+
+      {/* Burst ring — fires when a marble passes through the funnel tip */}
+      <style>{`@keyframes marblePop{from{transform:scale(0.1);opacity:1}to{transform:scale(14);opacity:0}}`}</style>
+      {burst && (
+        <div
+          key={burst.key}
+          onAnimationEnd={() => setBurst(null)}
+          style={{
+            position: 'absolute', inset: 0, zIndex: 20, pointerEvents: 'none',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <div style={{
+            width: 50, height: 50, borderRadius: '50%',
+            border: `8px solid ${burst.color}`,
+            boxShadow: `0 0 28px ${burst.color}`,
+            animation: 'marblePop 0.75s ease-out forwards',
+          }} />
+        </div>
+      )}
 
       {/* Rank HUD (phone only) */}
       {phase === 'racing' && !isProjector && myIdx >= 0 && (
