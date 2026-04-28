@@ -3,10 +3,53 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import MarbleRace from '@/components/game/marble-race/MarbleRace';
+import MarbleRaceScene from '@/components/game/marble-race/MarbleRaceScene';
 import type { Session, SessionPlayer } from '@/types/session';
+
+type Mode = '2d' | '3d';
 
 interface Props {
   sessionId: string;
+}
+
+function ModePicker({ onSelect }: { onSelect: (mode: Mode) => void }) {
+  return (
+    <main
+      style={{
+        minHeight: '100dvh', background: '#1C1B16', color: '#fff',
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        justifyContent: 'center', gap: 24,
+        fontFamily: 'system-ui, sans-serif', padding: '32px 16px',
+      }}
+    >
+      <h2 style={{ fontSize: 22, fontWeight: 800, color: '#EF9F27', margin: 0 }}>
+        Choose View
+      </h2>
+      <div style={{ display: 'flex', gap: 12, width: '100%', maxWidth: 320 }}>
+        <button
+          onClick={() => onSelect('2d')}
+          style={{
+            flex: 1, padding: '20px 0', borderRadius: 16,
+            background: '#EF9F27', color: '#1C1B16',
+            fontWeight: 700, fontSize: 16, border: 'none', cursor: 'pointer',
+          }}
+        >
+          2D Classic
+        </button>
+        <button
+          onClick={() => onSelect('3d')}
+          style={{
+            flex: 1, padding: '20px 0', borderRadius: 16,
+            background: 'rgba(255,255,255,0.1)', color: '#fff',
+            fontWeight: 700, fontSize: 16, border: '1px solid rgba(255,255,255,0.15)',
+            cursor: 'pointer',
+          }}
+        >
+          3D
+        </button>
+      </div>
+    </main>
+  );
 }
 
 export default function RaceRoom({ sessionId }: Props) {
@@ -15,14 +58,13 @@ export default function RaceRoom({ sessionId }: Props) {
   const [players, setPlayers] = useState<SessionPlayer[] | null>(null);
   const [myPlayerId, setMyPlayerId] = useState<string>('');
   const [isProjector, setIsProjector] = useState(false);
+  const [mode, setMode] = useState<Mode | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Detect projector mode
     const proj = new URLSearchParams(window.location.search).has('projector');
     setIsProjector(proj);
 
-    // Read player identity from localStorage (not required for projector)
     let pid = '';
     if (!proj) {
       try {
@@ -40,7 +82,6 @@ export default function RaceRoom({ sessionId }: Props) {
       }
     }
 
-    // Fetch session to get player list
     void fetch(`/api/sessions/${sessionId}`)
       .then(async res => {
         if (!res.ok) {
@@ -82,21 +123,26 @@ export default function RaceRoom({ sessionId }: Props) {
     );
   }
 
+  if (mode === null) {
+    return <ModePicker onSelect={setMode} />;
+  }
+
   const handleRaceFinished = () => {
-    // Only the session creator (players[0]) deletes the session
     if (!isProjector && players[0] && myPlayerId === players[0].id) {
       void fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' });
     }
   };
 
-  return (
-    <MarbleRace
-      players={players}
-      myPlayerId={myPlayerId}
-      isProjector={isProjector}
-      onLeave={() => router.push('/')}
-      onRaceAgain={() => router.push('/')}
-      onRaceFinished={handleRaceFinished}
-    />
-  );
+  const sharedProps = {
+    players,
+    myPlayerId,
+    isProjector,
+    onLeave: () => router.push('/'),
+    onRaceAgain: () => router.push('/'),
+    onRaceFinished: handleRaceFinished,
+  };
+
+  return mode === '3d'
+    ? <MarbleRaceScene {...sharedProps} />
+    : <MarbleRace {...sharedProps} />;
 }
