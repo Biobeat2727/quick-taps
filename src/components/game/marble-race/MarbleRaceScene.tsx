@@ -49,6 +49,14 @@ interface Props {
 // Phone: smoothly follows the player's marble along the Z axis.
 // Projector: sits at a fixed overview position (mid-track).
 
+// When the marble enters the funnel (z ≥ 230) the camera sweeps from the
+// normal side-view (above, looking down Y) to a head-on view looking straight
+// into the funnel mouth along its Z axis — the funnel appears as a circle and
+// the marble traces its spiral inward.
+const FUNNEL_ENTRY_Z = 230;
+const FUNNEL_CENTER_Z = 244;
+const FUNNEL_ZOOM = 5; // funnel mouth ≈80 units wide; zoom 5 fits it on a phone screen
+
 function CameraRig({
   marbleRefs,
   myIdx,
@@ -59,20 +67,68 @@ function CameraRig({
   isProjector: boolean;
 }) {
   const { camera } = useThree();
-  const camZRef = useRef(10);
+  // Separate scalar refs for each camera parameter so we can lerp each independently
+  const posYRef  = useRef(50);
+  const posZRef  = useRef(10);
+  const lookZRef = useRef(10);
+  const upYRef   = useRef(0);
+  const upZRef   = useRef(-1);
+  const zoomRef  = useRef(12);
+  const inFunnelRef = useRef(false);
 
   useFrame(() => {
-    let targetZ: number;
+    let tPosY: number, tPosZ: number, tLookZ: number;
+    let tUpY: number, tUpZ: number, tZoom: number;
+
     if (!isProjector && myIdx >= 0 && marbleRefs.current[myIdx]) {
-      targetZ = marbleRefs.current[myIdx]!.translation().z;
+      const marbleZ = marbleRefs.current[myIdx]!.translation().z;
+      if (marbleZ >= FUNNEL_ENTRY_Z) inFunnelRef.current = true;
+
+      if (inFunnelRef.current) {
+        // Head-on view: camera sits just outside the funnel mouth (z=230),
+        // looking along +Z into the funnel. On screen: X horizontal, Y vertical.
+        // near=1 clips the glass tubes (z≤222) and outer walls (z≤230) that are
+        // behind this camera position, leaving only the funnel in view.
+        camera.near = 1;
+        camera.far  = 150;
+        tPosY  = 0;
+        tPosZ  = 225;          // past the glass tubes (end at z=222), before funnel mouth (z=230)
+        tLookZ = FUNNEL_CENTER_Z;
+        tUpY   = 1;            // standard Y-up for this orientation
+        tUpZ   = 0;
+        tZoom  = FUNNEL_ZOOM;
+      } else {
+        // Side view: camera above, looking straight down, track runs top→bottom
+        tPosY  = 50;
+        tPosZ  = marbleZ;
+        tLookZ = marbleZ;
+        tUpY   = 0;
+        tUpZ   = -1;
+        tZoom  = 12;
+      }
     } else {
-      targetZ = 130; // mid-track overview
+      // Projector / no marble: fixed mid-track overview
+      tPosY  = 50;
+      tPosZ  = 130;
+      tLookZ = 130;
+      tUpY   = 0;
+      tUpZ   = -1;
+      tZoom  = 12;
     }
-    camZRef.current += (targetZ - camZRef.current) * 0.06;
-    const z = camZRef.current;
-    camera.position.set(0, 50, z);
-    camera.up.set(0, 0, -1);
-    camera.lookAt(0, 0, z);
+
+    const α = 0.06;
+    posYRef.current  += (tPosY  - posYRef.current)  * α;
+    posZRef.current  += (tPosZ  - posZRef.current)  * α;
+    lookZRef.current += (tLookZ - lookZRef.current) * α;
+    upYRef.current   += (tUpY   - upYRef.current)   * α;
+    upZRef.current   += (tUpZ   - upZRef.current)   * α;
+    zoomRef.current  += (tZoom  - zoomRef.current)  * α;
+
+    camera.position.set(0, posYRef.current, posZRef.current);
+    camera.up.set(0, upYRef.current, upZRef.current);
+    camera.lookAt(0, 0, lookZRef.current);
+    camera.zoom = zoomRef.current;
+    camera.updateProjectionMatrix();
   });
 
   return null;
