@@ -55,7 +55,7 @@ interface Props {
 // the marble traces its spiral inward.
 const FUNNEL_ENTRY_Z = 230;
 const FUNNEL_CENTER_Z = 244;
-const FUNNEL_ZOOM = 5; // funnel mouth ≈80 units wide; zoom 5 fits it on a phone screen
+const FUNNEL_ZOOM = 8; // fills screen with the funnel interior; trim the outer rim is fine
 
 function CameraRig({
   marbleRefs,
@@ -405,9 +405,9 @@ export default function MarbleRaceScene({
           {/* Act 3 — funnel */}
           <Funnel />
 
-          {/* Catch floor below funnel tip */}
+          {/* Catch floor below funnel tip — invisible, physics-only */}
           <RigidBody type="fixed">
-            <mesh position={[0, 0, 263]}>
+            <mesh position={[0, 0, 263]} visible={false}>
               <boxGeometry args={[30, 4, 1]} />
               <meshStandardMaterial color="#555555" />
             </mesh>
