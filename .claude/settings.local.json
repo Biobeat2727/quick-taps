@@ -10,7 +10,8 @@
       "Bash(wc:*)",
       "Bash(vercel:*)",
       "Bash(grep:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(npm ls:*)"
     ]
   }
 }
