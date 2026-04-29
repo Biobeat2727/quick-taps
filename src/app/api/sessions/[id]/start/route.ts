@@ -7,6 +7,7 @@ import { z } from "zod";
 
 const StartSchema = z.object({
   playerId: z.string().min(1),
+  mode: z.enum(['2d', '3d']),
 });
 
 export async function POST(
@@ -50,7 +51,7 @@ export async function POST(
   await setSession(session);
 
   const channel = ablyRest.channels.get(CHANNELS.session(id));
-  await channel.publish("game:started", { sessionId: id });
+  await channel.publish("game:started", { sessionId: id, mode: parsed.data.mode });
 
   return Response.json(session);
 }

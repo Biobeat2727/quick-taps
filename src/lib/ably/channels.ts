@@ -41,6 +41,7 @@ export interface GameStartedMessage {
   name: "game:started";
   data: {
     sessionId: string;
+    mode: '2d' | '3d';
   };
 }
 

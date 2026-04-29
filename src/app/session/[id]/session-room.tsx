@@ -33,6 +33,7 @@ export default function SessionRoom({ sessionId }: { sessionId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [pickingMode, setPickingMode] = useState(false);
   const playerInfoRef = useRef<PlayerInfo | null>(null);
 
   const fetchSession = useCallback(async () => {
@@ -76,7 +77,8 @@ export default function SessionRoom({ sessionId }: { sessionId: string }) {
         void fetchSession();
       }
       if (msg.name === "game:started") {
-        router.push(`/session/${sessionId}/race`);
+        const { mode } = msg.data as { sessionId: string; mode: string };
+        router.push(`/session/${sessionId}/race?mode=${mode}`);
       }
     });
     return () => {
@@ -121,20 +123,21 @@ export default function SessionRoom({ sessionId }: { sessionId: string }) {
     router.push("/");
   }
 
-  async function handleStart() {
+  async function handleStartWithMode(mode: '2d' | '3d') {
     if (!playerInfo) return;
+    setPickingMode(false);
     setStarting(true);
     try {
       const res = await fetch(`/api/sessions/${sessionId}/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerId: playerInfo.playerId }),
+        body: JSON.stringify({ playerId: playerInfo.playerId, mode }),
       });
       if (!res.ok) {
         setStarting(false);
         setError("Couldn't start the race. Try again.");
       }
-      // game:started Ably message drives the transition for all players
+      // game:started Ably message (with mode) drives the transition for all players
     } catch {
       setStarting(false);
       setError("Couldn't start the race. Try again.");
@@ -246,17 +249,45 @@ export default function SessionRoom({ sessionId }: { sessionId: string }) {
       {/* Start Race — creator only */}
       {isCreator && (
         <div className="px-4 py-4 border-t border-gray-800/60">
-          <button
-            onClick={() => void handleStart()}
-            disabled={starting}
-            className="w-full rounded-2xl py-4 text-lg font-bold bg-amber-400 text-gray-950 active:scale-95 transition-transform disabled:opacity-50"
-          >
-            {starting ? "Starting…" : "Start Race"}
-          </button>
-          {session.players.length === 1 && (
-            <p className="text-center text-xs text-gray-500 mt-2">
-              Solo? NPCs will fill the field.
-            </p>
+          {!pickingMode ? (
+            <>
+              <button
+                onClick={() => setPickingMode(true)}
+                disabled={starting}
+                className="w-full rounded-2xl py-4 text-lg font-bold bg-amber-400 text-gray-950 active:scale-95 transition-transform disabled:opacity-50"
+              >
+                {starting ? "Starting…" : "Start Race"}
+              </button>
+              {session.players.length === 1 && (
+                <p className="text-center text-xs text-gray-500 mt-2">
+                  Solo? NPCs will fill the field.
+                </p>
+              )}
+            </>
+          ) : (
+            <div className="flex flex-col gap-3">
+              <p className="text-center text-sm font-semibold text-amber-400">Choose a view</p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => void handleStartWithMode('2d')}
+                  className="flex-1 rounded-2xl py-5 bg-amber-400 text-gray-950 font-bold text-base active:scale-95 transition-transform"
+                >
+                  2D Classic
+                </button>
+                <button
+                  onClick={() => void handleStartWithMode('3d')}
+                  className="flex-1 rounded-2xl py-5 bg-white/10 text-white font-bold text-base border border-white/15 active:scale-95 transition-transform"
+                >
+                  3D
+                </button>
+              </div>
+              <button
+                onClick={() => setPickingMode(false)}
+                className="text-center text-xs text-gray-500 py-1 active:text-gray-300"
+              >
+                Cancel
+              </button>
+            </div>
           )}
         </div>
       )}
