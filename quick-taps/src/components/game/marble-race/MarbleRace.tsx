@@ -24,6 +24,7 @@ interface Props {
   players: SessionPlayer[];
   myPlayerId: string;
   isProjector?: boolean;
+  seed?: number;
   onLeave: () => void;
   onRaceAgain: () => void;
   onRaceFinished?: () => void;
