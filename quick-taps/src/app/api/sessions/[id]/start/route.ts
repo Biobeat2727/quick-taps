@@ -3,7 +3,13 @@ import { getSession, setSession } from "@/lib/redis/session";
 import { ablyRest } from "@/lib/ably/server";
 import { CHANNELS } from "@/lib/ably/channels";
 import { NPC_NAMES, MARBLE_COLORS } from "@/lib/constants";
+import { simulateRace } from "@/lib/physics/simulate-race";
+import { redis } from "@/lib/redis/client";
 import { z } from "zod";
+
+export const runtime = 'nodejs';
+
+const RECORDING_TTL = 10 * 60; // 10 minutes — matches session TTL
 
 const StartSchema = z.object({
   playerId: z.string().min(1),
@@ -50,10 +56,18 @@ export async function POST(
   session.lastActivity = Date.now();
   await setSession(session);
 
+  // Run the physics simulation server-side and store the recording.
+  // All clients will replay this identical recording — no physics on the client.
   const raceSeed = Math.floor(Math.random() * 2 ** 32);
+  const recording = await simulateRace(session.players, raceSeed);
+  await redis.set(`qt:race:recording:${id}`, recording, { ex: RECORDING_TTL });
 
   const channel = ablyRest.channels.get(CHANNELS.session(id));
-  await channel.publish("game:started", { sessionId: id, mode: parsed.data.mode, seed: raceSeed });
+  await channel.publish("game:started", {
+    sessionId: id,
+    mode: parsed.data.mode,
+    seed: raceSeed,
+  });
 
   return Response.json(session);
 }

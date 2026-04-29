@@ -2,21 +2,22 @@
 
 import { useRef, useMemo, useEffect, useState, useCallback } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { Physics, RigidBody, TrimeshCollider, type RapierRigidBody } from '@react-three/rapier';
 import {
   CatmullRomCurve3,
   TubeGeometry,
   CylinderGeometry,
   Vector3,
   DoubleSide,
+  type Mesh,
 } from 'three';
 import {
   buildParticipants, ordinal, CountdownOverlay, ResultsScreen,
   type Participant, type Phase,
 } from './marble-race-shared';
 import type { SessionPlayer } from '@/types/session';
+import type { DecodedRecording } from '@/types/race';
 
-// ── Act 1: Peg grid (z=0–56, row spacing 8) ─────────────────────────────────
+// ── Track geometry constants (visual only — physics runs server-side) ─────────
 
 const PEGS: [number, number, number][] = [];
 for (let row = 0; row < 8; row++) {
@@ -25,62 +26,42 @@ for (let row = 0; row < 8; row++) {
   for (const x of xs) PEGS.push([x, 0, z]);
 }
 
-// ── Act 2: Glass tube control-point paths ────────────────────────────────────
-
 const TUBE_PATHS: [number, number, number][][] = [
-  [[-9,0,87], [-9,0,100], [-9,8,130], [0,8,155], [9,8,180], [9,4,205], [9,0,215], [9,8,222]],
-  [[-3,0,87], [-3,0,100], [-3,3,130], [0,3,155], [3,3,180], [3,1,205], [3,0,215], [3,5,222]],
-  [[ 3,0,87], [ 3,0,100], [ 3,-3,130], [0,-3,155], [-3,-3,180], [-3,-1,205], [-3,0,215], [-3,-5,222]],
-  [[ 9,0,87], [ 9,0,100], [ 9,-8,130], [0,-8,155], [-9,-8,180], [-9,-4,205], [-9,0,215], [-9,-8,222]],
+  [[-9,0,87],[-9,0,100],[-9,8,130],[0,8,155],[9,8,180],[9,4,205],[9,0,215],[9,8,222]],
+  [[-3,0,87],[-3,0,100],[-3,3,130],[0,3,155],[3,3,180],[3,1,205],[3,0,215],[3,5,222]],
+  [[ 3,0,87],[ 3,0,100],[ 3,-3,130],[0,-3,155],[-3,-3,180],[-3,-1,205],[-3,0,215],[-3,-5,222]],
+  [[ 9,0,87],[ 9,0,100],[ 9,-8,130],[0,-8,155],[-9,-8,180],[-9,-4,205],[-9,0,215],[-9,-8,222]],
 ];
 
-// ── Seeded PRNG (mulberry32) ──────────────────────────────────────────────────
-// Produces identical sequences across all clients given the same seed.
-function mulberry32(seed: number) {
-  return () => {
-    seed = (seed + 0x6D2B79F5) >>> 0;
-    let t = Math.imul(seed ^ (seed >>> 15), seed | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-// ── Props ────────────────────────────────────────────────────────────────────
+// ── Props ─────────────────────────────────────────────────────────────────────
 
 interface Props {
   players: SessionPlayer[];
   myPlayerId: string;
   isProjector?: boolean;
   seed?: number;
+  recording: DecodedRecording;
   onLeave: () => void;
   onRaceAgain: () => void;
   onRaceFinished?: () => void;
 }
 
-// ── CameraRig ────────────────────────────────────────────────────────────────
-// Phone: smoothly follows the player's marble along the Z axis.
-// Projector: sits at a fixed overview position (mid-track).
+// ── CameraRig ─────────────────────────────────────────────────────────────────
+// Reads marble positions from the mesh refs (updated each frame by ReplayDriver).
 
-// When the marble enters the funnel (z ≥ 230) the camera sweeps from the
-// normal side-view (above, looking down Y) to a head-on view looking straight
-// into the funnel mouth along its Z axis — the funnel appears as a circle and
-// the marble traces its spiral inward.
 const FUNNEL_ENTRY_Z = 230;
 const FUNNEL_CENTER_Z = 244;
-// Zoom is dynamic: starts wide (5) so the marble is always on-screen at the rim,
-// then tightens to 8 as the marble spirals toward the funnel center.
 
 function CameraRig({
-  marbleRefs,
+  meshRefs,
   myIdx,
   isProjector,
 }: {
-  marbleRefs: React.RefObject<(RapierRigidBody | null)[]>;
+  meshRefs: React.RefObject<(Mesh | null)[]>;
   myIdx: number;
   isProjector: boolean;
 }) {
   const { camera } = useThree();
-  // Separate scalar refs for each camera parameter so we can lerp each independently
   const posYRef  = useRef(50);
   const posZRef  = useRef(10);
   const lookZRef = useRef(10);
@@ -93,14 +74,11 @@ function CameraRig({
     let tPosY: number, tPosZ: number, tLookZ: number;
     let tUpY: number, tUpZ: number, tZoom: number;
 
-    if (!isProjector && myIdx >= 0 && marbleRefs.current[myIdx]) {
-      const marbleZ = marbleRefs.current[myIdx]!.translation().z;
+    if (!isProjector && myIdx >= 0 && meshRefs.current[myIdx]) {
+      const marbleZ = meshRefs.current[myIdx]!.position.z;
       if (marbleZ >= FUNNEL_ENTRY_Z) inFunnelRef.current = true;
 
       if (inFunnelRef.current) {
-        // Head-on view: camera sits just outside the funnel mouth, looking along
-        // +Z. near=0.1 clips geometry behind the camera without cutting off the
-        // marble when it bounces near the funnel entrance.
         camera.near = 0.1;
         camera.far  = 2000;
         tPosY  = 0;
@@ -108,13 +86,10 @@ function CameraRig({
         tLookZ = FUNNEL_CENTER_Z;
         tUpY   = 1;
         tUpZ   = 0;
-        // Wide zoom (5) when marble is at the funnel rim so it stays on-screen;
-        // tightens to 8 as it spirals toward the center.
-        const mPos = marbleRefs.current[myIdx]?.translation();
+        const mPos = meshRefs.current[myIdx]?.position;
         const r = mPos ? Math.sqrt(mPos.x * mPos.x + mPos.y * mPos.y) : 40;
         tZoom = 5 + 3 * Math.max(0, 1 - r / 20);
       } else {
-        // Side view: camera above, looking straight down, track runs top→bottom
         tPosY  = 50;
         tPosZ  = marbleZ;
         tLookZ = marbleZ;
@@ -123,7 +98,6 @@ function CameraRig({
         tZoom  = 12;
       }
     } else {
-      // Projector / no marble: fixed mid-track overview
       tPosY  = 50;
       tPosZ  = 130;
       tLookZ = 130;
@@ -132,7 +106,7 @@ function CameraRig({
       tZoom  = 12;
     }
 
-    const α = inFunnelRef.current ? 0.1 : 0.06; // faster sweep once in funnel
+    const α = inFunnelRef.current ? 0.1 : 0.06;
     posYRef.current  += (tPosY  - posYRef.current)  * α;
     posZRef.current  += (tPosZ  - posZRef.current)  * α;
     lookZRef.current += (tLookZ - lookZRef.current) * α;
@@ -150,168 +124,137 @@ function CameraRig({
   return null;
 }
 
-// ── GlassTube ────────────────────────────────────────────────────────────────
+// ── GlassTube ─────────────────────────────────────────────────────────────────
 
 function GlassTube({ path }: { path: [number, number, number][] }) {
-  const { outerGeom, physVerts, physIdx } = useMemo(() => {
+  const outerGeom = useMemo(() => {
     const curve = new CatmullRomCurve3(path.map(([x, y, z]) => new Vector3(x, y, z)));
-    const outerGeom = new TubeGeometry(curve, 120, 2.0, 16, false);
-    const physGeom = new TubeGeometry(curve, 60, 1.8, 12, false);
-    const physVerts = new Float32Array(physGeom.attributes.position.array);
-    const physIdx = new Uint32Array(physGeom.index!.array);
-    for (let i = 0; i < physIdx.length; i += 3) {
-      const t = physIdx[i]; physIdx[i] = physIdx[i + 1]; physIdx[i + 1] = t;
-    }
-    physGeom.dispose();
-    return { outerGeom, physVerts, physIdx };
+    return new TubeGeometry(curve, 120, 2.0, 16, false);
   }, [path]);
 
   return (
-    <RigidBody type="fixed" colliders={false} friction={0.4} restitution={0.3}>
-      <TrimeshCollider args={[physVerts, physIdx]} />
-      <mesh geometry={outerGeom}>
-        <meshPhysicalMaterial
-          color="#aaddff"
-          transmission={0.85}
-          roughness={0}
-          thickness={0.5}
-          transparent
-          opacity={0.25}
-          side={DoubleSide}
-        />
-      </mesh>
-    </RigidBody>
+    <mesh geometry={outerGeom}>
+      <meshPhysicalMaterial
+        color="#aaddff"
+        transmission={0.85}
+        roughness={0}
+        thickness={0.5}
+        transparent
+        opacity={0.25}
+        side={DoubleSide}
+      />
+    </mesh>
   );
 }
 
-// ── Funnel ───────────────────────────────────────────────────────────────────
+// ── Funnel ────────────────────────────────────────────────────────────────────
 
 function Funnel() {
-  const { visGeom, physVerts, physIdx } = useMemo(() => {
-    const visGeom = new CylinderGeometry(2, 40, 28, 64, 1, true);
-    const physGeom = new CylinderGeometry(2, 40, 28, 64, 1, true);
-    const physVerts = new Float32Array(physGeom.attributes.position.array);
-    const physIdx = new Uint32Array(physGeom.index!.array);
-    for (let i = 0; i < physIdx.length; i += 3) {
-      const t = physIdx[i]; physIdx[i] = physIdx[i + 1]; physIdx[i + 1] = t;
-    }
-    physGeom.dispose();
-    return { visGeom, physVerts, physIdx };
-  }, []);
-
+  const visGeom = useMemo(() => new CylinderGeometry(2, 40, 28, 64, 1, true), []);
   return (
-    <RigidBody
-      type="fixed"
-      colliders={false}
+    <mesh
+      geometry={visGeom}
       position={[0, 0, 244]}
       rotation={[Math.PI / 2, 0, 0]}
-      friction={0.04}
-      restitution={0.4}
+      receiveShadow
     >
-      <TrimeshCollider args={[physVerts, physIdx]} />
-      <mesh geometry={visGeom} receiveShadow>
-        <meshStandardMaterial color="#6699aa" side={DoubleSide} transparent opacity={0.6} />
-      </mesh>
-    </RigidBody>
+      <meshStandardMaterial color="#6699aa" side={DoubleSide} transparent opacity={0.6} />
+    </mesh>
   );
 }
 
-// ── GameLoop ─────────────────────────────────────────────────────────────────
-// Runs inside the Canvas every frame. Handles finish detection, rank HUD, and
-// fires onAllFinished once every marble has passed the funnel exit (z ≥ 258).
+// ── ReplayDriver ──────────────────────────────────────────────────────────────
+// Advances through recorded frames each render tick. Updates mesh positions
+// directly (no React state) for maximum performance.
 
-function GameLoop({
-  marbleRefs,
+// Physics was recorded at exactly 60 Hz. We accumulate real elapsed time and
+// derive the target frame index so playback is always at real-time speed,
+// matching @react-three/rapier's fixed-timestep accumulator behaviour regardless
+// of the display refresh rate (30 Hz phone, 60 Hz laptop, 144 Hz monitor, etc).
+const PHYSICS_HZ = 60;
+
+function ReplayDriver({
+  recording,
+  meshRefs,
   participants,
   myIdx,
   hudRef,
+  phase,
   onAllFinished,
   onMarbleFinish,
-  marbleImpulses,
-  phase,
 }: {
-  marbleRefs: React.RefObject<(RapierRigidBody | null)[]>;
+  recording: DecodedRecording;
+  meshRefs: React.RefObject<(Mesh | null)[]>;
   participants: Participant[];
   myIdx: number;
   hudRef: React.RefObject<HTMLDivElement | null>;
-  onAllFinished: (ranking: Participant[]) => void;
-  onMarbleFinish?: (color: string) => void;
-  marbleImpulses: number[];
   phase: Phase;
+  onAllFinished: (ranking: Participant[]) => void;
+  onMarbleFinish: (color: string) => void;
 }) {
-  const finishedSet = useRef(new Set<number>());
-  const enteredFunnelSet = useRef(new Set<number>());
-  const placementsRef = useRef<string[]>([]);
-  const doneRef = useRef(false);
-  const impulseApplied = useRef(false);
-  const phaseRef = useRef(phase);
-  phaseRef.current = phase;
+  // Accumulate real seconds elapsed since racing started.
+  // Frame 0 is the pre-impulse rest position (shown during countdown); racing
+  // begins at frame 1. elapsed=0 → frame 1, elapsed=1/60 → frame 2, etc.
+  const elapsedRef  = useRef(0);
+  const lastFrameRef = useRef(0);
+  const doneRef     = useRef(false);
+  const firedFinish = useRef(new Set<number>());
 
-  useFrame(() => {
-    if (doneRef.current) return;
+  // delta is the real seconds since last render call (provided by @react-three/fiber)
+  useFrame((_, delta) => {
+    if (phase !== 'racing' || doneRef.current) return;
 
-    // Apply launch impulses on the very first physics frame after racing starts.
-    // Using useFrame (not setTimeout) ensures all clients apply at physics step 1.
-    if (phaseRef.current === 'racing' && !impulseApplied.current) {
-      impulseApplied.current = true;
-      marbleRefs.current.forEach((rb, i) => {
-        rb?.applyImpulse({ x: marbleImpulses[i], y: 0, z: 0 }, true);
-      });
+    elapsedRef.current += delta;
+    // +1 because frame 0 is the pre-race rest pose
+    const targetFrame = Math.min(
+      1 + Math.floor(elapsedRef.current * PHYSICS_HZ),
+      recording.numFrames - 1,
+    );
+
+    // Race over — fire completion callback once
+    if (targetFrame >= recording.numFrames - 1 && elapsedRef.current * PHYSICS_HZ >= recording.numFrames - 1) {
+      if (!doneRef.current) {
+        doneRef.current = true;
+        const ranked = recording.ranking
+          .map(id => participants.find(p => p.id === id))
+          .filter((p): p is Participant => !!p);
+        onAllFinished(ranked);
+      }
+      return;
     }
 
-    const rbs = marbleRefs.current;
+    // Only update if we've actually moved to a new frame
+    if (targetFrame <= lastFrameRef.current) return;
+    lastFrameRef.current = targetFrame;
 
-    // Finish + escape detection
-    for (let i = 0; i < participants.length; i++) {
-      if (finishedSet.current.has(i)) continue;
-      const rb = rbs[i];
-      if (!rb) continue;
-      const pos = rb.translation();
+    const { numMarbles, frames } = recording;
+    const base = targetFrame * numMarbles * 3;
 
-      // Track funnel entry
-      if (pos.z >= 225) enteredFunnelSet.current.add(i);
-
-      // Normal finish: passed through the funnel tip
-      if (pos.z >= 258) {
-        finishedSet.current.add(i);
-        placementsRef.current.push(participants[i].id);
-        onMarbleFinish?.(participants[i].color);
-        continue;
-      }
-
-      // Escape: entered funnel then bounced back out or went out of world bounds
-      if (
-        enteredFunnelSet.current.has(i) &&
-        (pos.z < 218 || Math.abs(pos.x) > 50 || Math.abs(pos.y) > 50)
-      ) {
-        finishedSet.current.add(i);
-        placementsRef.current.push(participants[i].id);
-      }
+    // Update mesh positions
+    for (let i = 0; i < numMarbles; i++) {
+      const off = base + i * 3;
+      meshRefs.current[i]?.position.set(frames[off], frames[off + 1], frames[off + 2]);
     }
 
-    // Rank HUD — update via direct DOM ref (no React setState in hot path)
-    if (myIdx >= 0 && hudRef.current && rbs[myIdx]) {
-      const myZ = rbs[myIdx]!.translation().z;
-      const myDone = finishedSet.current.has(myIdx);
+    // Rank HUD (DOM mutation, no setState)
+    if (myIdx >= 0 && hudRef.current && meshRefs.current[myIdx]) {
+      const myZ = meshRefs.current[myIdx]!.position.z;
       let rank = 1;
-      for (let i = 0; i < participants.length; i++) {
-        if (i === myIdx) continue;
-        const rb = rbs[i];
-        if (!rb) continue;
-        const oDone = finishedSet.current.has(i);
-        if (oDone && !myDone) rank++;
-        else if (!oDone && !myDone && rb.translation().z > myZ) rank++;
+      for (let i = 0; i < numMarbles; i++) {
+        if (i !== myIdx && (meshRefs.current[i]?.position.z ?? -Infinity) > myZ) rank++;
       }
       hudRef.current.textContent = ordinal(rank);
     }
 
-    // All finished?
-    if (placementsRef.current.length >= participants.length) {
-      doneRef.current = true;
-      const ranked = placementsRef.current
-        .map(id => participants.find(p => p.id === id))
-        .filter((p): p is Participant => !!p);
-      onAllFinished(ranked);
+    // Burst ring when a marble first reaches the funnel tip
+    for (let i = 0; i < numMarbles; i++) {
+      if (!firedFinish.current.has(i)) {
+        const z = frames[base + i * 3 + 2];
+        if (z >= 258) {
+          firedFinish.current.add(i);
+          onMarbleFinish(participants[i].color);
+        }
+      }
     }
   });
 
@@ -324,7 +267,7 @@ export default function MarbleRaceScene({
   players,
   myPlayerId,
   isProjector = false,
-  seed = 0,
+  recording,
   onLeave,
   onRaceAgain,
   onRaceFinished,
@@ -332,29 +275,25 @@ export default function MarbleRaceScene({
   const [phase, setPhase] = useState<Phase>('countdown');
   const [countVal, setCountVal] = useState<number | null>(3);
   const [finalRanking, setFinalRanking] = useState<Participant[]>([]);
+  const [burst, setBurst] = useState<{ color: string; key: number } | null>(null);
+  const burstKeyRef = useRef(0);
 
   const participants = useMemo(() => buildParticipants(players), [players]);
   const myIdx = participants.findIndex(p => p.id === myPlayerId);
 
-  const marbleRefs = useRef<(RapierRigidBody | null)[]>(Array(participants.length).fill(null));
-  const hudRef = useRef<HTMLDivElement>(null);
-  const [burst, setBurst] = useState<{ color: string; key: number } | null>(null);
-  const burstKeyRef = useRef(0);
+  // Mesh refs — one per marble (Three.js Mesh, no physics)
+  const meshRefs = useRef<(Mesh | null)[]>(Array(participants.length).fill(null));
+  const hudRef   = useRef<HTMLDivElement>(null);
 
-  // Seeded random values — identical on every client for the same seed.
-  // mulberry32 with seed+1 for impulses avoids correlation with start positions.
-  const marbleStarts = useMemo<[number, number, number][]>(() => {
-    const rand = mulberry32(seed);
-    return participants.map((_, i) => {
-      const x = -10 + (i / Math.max(participants.length - 1, 1)) * 20 + (rand() * 3 - 1.5);
-      return [x, 0, -10];
-    });
-  }, [participants, seed]);
-
-  const marbleImpulses = useMemo(() => {
-    const rand = mulberry32(seed + 1);
-    return participants.map(() => rand() * 6 - 3);
-  }, [participants, seed]);
+  // Initialise marble positions to frame 0 (pre-impulse rest positions)
+  // so they're visible during the countdown.
+  useEffect(() => {
+    const { numMarbles, frames } = recording;
+    for (let i = 0; i < numMarbles; i++) {
+      const off = i * 3; // frame 0
+      meshRefs.current[i]?.position.set(frames[off], frames[off + 1], frames[off + 2]);
+    }
+  }, [recording]);
 
   // Countdown: 3 → 2 → 1 → GO! → racing
   useEffect(() => {
@@ -395,117 +334,88 @@ export default function MarbleRaceScene({
         orthographic
         camera={{ position: [0, 50, 10], up: [0, 0, -1], zoom: 12 }}
       >
-        <CameraRig marbleRefs={marbleRefs} myIdx={myIdx} isProjector={isProjector} />
+        <CameraRig meshRefs={meshRefs} myIdx={myIdx} isProjector={isProjector} />
 
         <ambientLight intensity={0.5} />
         <directionalLight position={[10, 20, 5]} intensity={1.5} castShadow />
         <pointLight position={[0, 15, 155]} intensity={0.8} />
 
-        {/* Physics paused during countdown so marbles sit still.
-            Fixed timeStep ensures physics advances at exactly 60 Hz on every
-            device, making the simulation deterministic given the same seed. */}
-        <Physics gravity={[0, 0, 15]} paused={phase !== 'racing'} timeStep={1 / 60}>
+        {/* Outer walls (visual only) */}
+        {[-15, 15].map(x => (
+          <mesh key={`wall-${x}`} position={[x, 0, 110]}>
+            <boxGeometry args={[1, 4, 240]} />
+            <meshStandardMaterial color="#aaaaaa" />
+          </mesh>
+        ))}
 
-          {/* Outer walls — z=-10 to z=230 */}
-          {[-15, 15].map(x => (
-            <RigidBody key={`wall-${x}`} type="fixed" friction={0.1} restitution={0.5}>
-              <mesh position={[x, 0, 110]}>
-                <boxGeometry args={[1, 4, 240]} />
-                <meshStandardMaterial color="#aaaaaa" />
-              </mesh>
-            </RigidBody>
-          ))}
+        {/* Act 1 — peg grid */}
+        {PEGS.map(([x, y, z], i) => (
+          <mesh key={`peg-${i}`} position={[x, y, z]}>
+            <cylinderGeometry args={[0.6, 0.6, 3, 12]} />
+            <meshStandardMaterial color="#dddddd" />
+          </mesh>
+        ))}
 
-          {/* Act 1 — staggered peg grid */}
-          {PEGS.map(([x, y, z], i) => (
-            <RigidBody key={`peg-${i}`} type="fixed" restitution={0.6} friction={0.1} colliders="hull">
-              <mesh position={[x, y, z]}>
-                <cylinderGeometry args={[0.6, 0.6, 3, 12]} />
-                <meshStandardMaterial color="#dddddd" />
-              </mesh>
-            </RigidBody>
-          ))}
+        {/* Transition — channel dividers */}
+        {[-6, 0, 6].map(cx => (
+          <mesh key={`divider-${cx}`} position={[cx, 0, 79]}>
+            <boxGeometry args={[2, 4, 28]} />
+            <meshStandardMaterial color="#999999" />
+          </mesh>
+        ))}
 
-          {/* Transition — channel dividers */}
-          {[-6, 0, 6].map(cx => (
-            <RigidBody key={`divider-${cx}`} type="fixed" friction={0.1} restitution={0.3}>
-              <mesh position={[cx, 0, 79]}>
-                <boxGeometry args={[2, 4, 28]} />
-                <meshStandardMaterial color="#999999" />
-              </mesh>
-            </RigidBody>
-          ))}
+        {/* Transition — angled outer closing walls */}
+        {([1, -1] as const).map(side => (
+          <mesh
+            key={`chute-outer-${side}`}
+            position={[side * 13, 0, 78]}
+            rotation={[0, -side * Math.atan2(4, 26), 0]}
+          >
+            <boxGeometry args={[0.5, 4, Math.sqrt(4 * 4 + 26 * 26)]} />
+            <meshStandardMaterial color="#999999" />
+          </mesh>
+        ))}
 
-          {/* Transition — angled outer closing walls */}
-          {([1, -1] as const).map(side => (
-            <RigidBody key={`chute-outer-${side}`} type="fixed" friction={0.1} restitution={0.3}>
-              <mesh
-                position={[side * 13, 0, 78]}
-                rotation={[0, -side * Math.atan2(4, 26), 0]}
-              >
-                <boxGeometry args={[0.5, 4, Math.sqrt(4 * 4 + 26 * 26)]} />
-                <meshStandardMaterial color="#999999" />
-              </mesh>
-            </RigidBody>
-          ))}
+        {/* Act 2 — glass tubes */}
+        {TUBE_PATHS.map((path, i) => (
+          <GlassTube key={`tube-${i}`} path={path} />
+        ))}
 
-          {/* Act 2 — glass tubes */}
-          {TUBE_PATHS.map((path, i) => (
-            <GlassTube key={`tube-${i}`} path={path} />
-          ))}
+        {/* Act 3 — funnel */}
+        <Funnel />
 
-          {/* Act 3 — funnel */}
-          <Funnel />
+        {/* Marbles — positions driven by ReplayDriver */}
+        {participants.map((p, i) => (
+          <mesh
+            key={p.id}
+            ref={(el) => { meshRefs.current[i] = el; }}
+            castShadow
+          >
+            <sphereGeometry args={[1, 32, 32]} />
+            <meshPhysicalMaterial
+              color={p.color}
+              roughness={0.2}
+              metalness={0.1}
+              emissive={i === myIdx ? p.color : '#000000'}
+              emissiveIntensity={i === myIdx ? 0.3 : 0}
+            />
+          </mesh>
+        ))}
 
-          {/* Catch floor below funnel tip — invisible, physics-only */}
-          <RigidBody type="fixed">
-            <mesh position={[0, 0, 263]} visible={false}>
-              <boxGeometry args={[30, 4, 1]} />
-              <meshStandardMaterial color="#555555" />
-            </mesh>
-          </RigidBody>
-
-          {/* Marbles — one per participant */}
-          {participants.map((p, i) => (
-            <RigidBody
-              key={p.id}
-              ref={(el) => { marbleRefs.current[i] = el; }}
-              position={marbleStarts[i]}
-              restitution={0.5}
-              friction={0.4}
-              colliders="ball"
-            >
-              <mesh castShadow>
-                <sphereGeometry args={[1, 32, 32]} />
-                <meshPhysicalMaterial
-                  color={p.color}
-                  roughness={0.2}
-                  metalness={0.1}
-                  emissive={i === myIdx ? p.color : '#000000'}
-                  emissiveIntensity={i === myIdx ? 0.3 : 0}
-                />
-              </mesh>
-            </RigidBody>
-          ))}
-
-          <GameLoop
-            marbleRefs={marbleRefs}
-            participants={participants}
-            myIdx={myIdx}
-            hudRef={hudRef}
-            onAllFinished={handleAllFinished}
-            onMarbleFinish={handleMarbleFinish}
-            marbleImpulses={marbleImpulses}
-            phase={phase}
-          />
-
-        </Physics>
+        <ReplayDriver
+          recording={recording}
+          meshRefs={meshRefs}
+          participants={participants}
+          myIdx={myIdx}
+          hudRef={hudRef}
+          phase={phase}
+          onAllFinished={handleAllFinished}
+          onMarbleFinish={handleMarbleFinish}
+        />
       </Canvas>
 
-      {/* Countdown overlay */}
       {phase === 'countdown' && <CountdownOverlay val={countVal} />}
 
-      {/* Burst ring — fires when a marble passes through the funnel tip */}
       <style>{`@keyframes marblePop{from{transform:scale(0.1);opacity:1}to{transform:scale(14);opacity:0}}`}</style>
       {burst && (
         <div
@@ -525,7 +435,6 @@ export default function MarbleRaceScene({
         </div>
       )}
 
-      {/* Rank HUD (phone only) */}
       {phase === 'racing' && !isProjector && myIdx >= 0 && (
         <div
           style={{
