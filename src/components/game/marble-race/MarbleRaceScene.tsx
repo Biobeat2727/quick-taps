@@ -34,12 +34,24 @@ const TUBE_PATHS: [number, number, number][][] = [
   [[ 9,0,87], [ 9,0,100], [ 9,-8,130], [0,-8,155], [-9,-8,180], [-9,-4,205], [-9,0,215], [-9,-8,222]],
 ];
 
+// ── Seeded PRNG (mulberry32) ──────────────────────────────────────────────────
+// Produces identical sequences across all clients given the same seed.
+function mulberry32(seed: number) {
+  return () => {
+    seed = (seed + 0x6D2B79F5) >>> 0;
+    let t = Math.imul(seed ^ (seed >>> 15), seed | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 // ── Props ────────────────────────────────────────────────────────────────────
 
 interface Props {
   players: SessionPlayer[];
   myPlayerId: string;
   isProjector?: boolean;
+  seed?: number;
   onLeave: () => void;
   onRaceAgain: () => void;
   onRaceFinished?: () => void;
@@ -215,6 +227,8 @@ function GameLoop({
   hudRef,
   onAllFinished,
   onMarbleFinish,
+  marbleImpulses,
+  phase,
 }: {
   marbleRefs: React.RefObject<(RapierRigidBody | null)[]>;
   participants: Participant[];
@@ -222,14 +236,28 @@ function GameLoop({
   hudRef: React.RefObject<HTMLDivElement | null>;
   onAllFinished: (ranking: Participant[]) => void;
   onMarbleFinish?: (color: string) => void;
+  marbleImpulses: number[];
+  phase: Phase;
 }) {
   const finishedSet = useRef(new Set<number>());
   const enteredFunnelSet = useRef(new Set<number>());
   const placementsRef = useRef<string[]>([]);
   const doneRef = useRef(false);
+  const impulseApplied = useRef(false);
+  const phaseRef = useRef(phase);
+  phaseRef.current = phase;
 
   useFrame(() => {
     if (doneRef.current) return;
+
+    // Apply launch impulses on the very first physics frame after racing starts.
+    // Using useFrame (not setTimeout) ensures all clients apply at physics step 1.
+    if (phaseRef.current === 'racing' && !impulseApplied.current) {
+      impulseApplied.current = true;
+      marbleRefs.current.forEach((rb, i) => {
+        rb?.applyImpulse({ x: marbleImpulses[i], y: 0, z: 0 }, true);
+      });
+    }
 
     const rbs = marbleRefs.current;
 
@@ -296,6 +324,7 @@ export default function MarbleRaceScene({
   players,
   myPlayerId,
   isProjector = false,
+  seed = 0,
   onLeave,
   onRaceAgain,
   onRaceFinished,
@@ -312,17 +341,20 @@ export default function MarbleRaceScene({
   const [burst, setBurst] = useState<{ color: string; key: number } | null>(null);
   const burstKeyRef = useRef(0);
 
-  // Stable per-race random values
-  const marbleStarts = useMemo<[number, number, number][]>(() =>
-    participants.map((_, i) => {
-      const x = -10 + (i / Math.max(participants.length - 1, 1)) * 20 + (Math.random() * 3 - 1.5);
+  // Seeded random values — identical on every client for the same seed.
+  // mulberry32 with seed+1 for impulses avoids correlation with start positions.
+  const marbleStarts = useMemo<[number, number, number][]>(() => {
+    const rand = mulberry32(seed);
+    return participants.map((_, i) => {
+      const x = -10 + (i / Math.max(participants.length - 1, 1)) * 20 + (rand() * 3 - 1.5);
       return [x, 0, -10];
-    }), [participants],
-  );
+    });
+  }, [participants, seed]);
 
-  const marbleImpulses = useMemo(() =>
-    participants.map(() => Math.random() * 6 - 3), [participants],
-  );
+  const marbleImpulses = useMemo(() => {
+    const rand = mulberry32(seed + 1);
+    return participants.map(() => rand() * 6 - 3);
+  }, [participants, seed]);
 
   // Countdown: 3 → 2 → 1 → GO! → racing
   useEffect(() => {
@@ -334,18 +366,6 @@ export default function MarbleRaceScene({
     ];
     return () => timers.forEach(clearTimeout);
   }, []);
-
-  // Apply X impulses once physics unpauses
-  useEffect(() => {
-    if (phase !== 'racing') return;
-    const id = setTimeout(() => {
-      marbleRefs.current.forEach((rb, i) => {
-        if (!rb) return;
-        rb.applyImpulse({ x: marbleImpulses[i], y: 0, z: 0 }, true);
-      });
-    }, 50);
-    return () => clearTimeout(id);
-  }, [phase, marbleImpulses]);
 
   const handleAllFinished = useCallback((ranking: Participant[]) => {
     setFinalRanking(ranking);
@@ -381,8 +401,10 @@ export default function MarbleRaceScene({
         <directionalLight position={[10, 20, 5]} intensity={1.5} castShadow />
         <pointLight position={[0, 15, 155]} intensity={0.8} />
 
-        {/* Physics paused during countdown so marbles sit still */}
-        <Physics gravity={[0, 0, 15]} paused={phase !== 'racing'}>
+        {/* Physics paused during countdown so marbles sit still.
+            Fixed timeStep ensures physics advances at exactly 60 Hz on every
+            device, making the simulation deterministic given the same seed. */}
+        <Physics gravity={[0, 0, 15]} paused={phase !== 'racing'} timeStep={1 / 60}>
 
           {/* Outer walls — z=-10 to z=230 */}
           {[-15, 15].map(x => (
@@ -473,6 +495,8 @@ export default function MarbleRaceScene({
             hudRef={hudRef}
             onAllFinished={handleAllFinished}
             onMarbleFinish={handleMarbleFinish}
+            marbleImpulses={marbleImpulses}
+            phase={phase}
           />
 
         </Physics>

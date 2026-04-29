@@ -42,6 +42,7 @@ export interface GameStartedMessage {
   data: {
     sessionId: string;
     mode: '2d' | '3d';
+    seed: number;
   };
 }
 

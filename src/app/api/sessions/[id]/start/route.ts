@@ -50,8 +50,10 @@ export async function POST(
   session.lastActivity = Date.now();
   await setSession(session);
 
+  const raceSeed = Math.floor(Math.random() * 2 ** 32);
+
   const channel = ablyRest.channels.get(CHANNELS.session(id));
-  await channel.publish("game:started", { sessionId: id, mode: parsed.data.mode });
+  await channel.publish("game:started", { sessionId: id, mode: parsed.data.mode, seed: raceSeed });
 
   return Response.json(session);
 }

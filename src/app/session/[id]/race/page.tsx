@@ -5,9 +5,15 @@ export default async function RacePage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ mode?: string }>;
+  searchParams: Promise<{ mode?: string; seed?: string }>;
 }) {
   const { id } = await params;
-  const { mode } = await searchParams;
-  return <RaceRoom sessionId={id} mode={mode === '2d' ? '2d' : '3d'} />;
+  const { mode, seed } = await searchParams;
+  return (
+    <RaceRoom
+      sessionId={id}
+      mode={mode === '2d' ? '2d' : '3d'}
+      seed={seed ? parseInt(seed, 10) : 0}
+    />
+  );
 }

@@ -77,8 +77,8 @@ export default function SessionRoom({ sessionId }: { sessionId: string }) {
         void fetchSession();
       }
       if (msg.name === "game:started") {
-        const { mode } = msg.data as { sessionId: string; mode: string };
-        router.push(`/session/${sessionId}/race?mode=${mode}`);
+        const { mode, seed } = msg.data as { sessionId: string; mode: string; seed: number };
+        router.push(`/session/${sessionId}/race?mode=${mode}&seed=${seed}`);
       }
     });
     return () => {

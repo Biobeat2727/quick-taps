@@ -11,9 +11,10 @@ type Mode = '2d' | '3d';
 interface Props {
   sessionId: string;
   mode: Mode;
+  seed: number;
 }
 
-export default function RaceRoom({ sessionId, mode }: Props) {
+export default function RaceRoom({ sessionId, mode, seed }: Props) {
   const router = useRouter();
 
   const [players, setPlayers] = useState<SessionPlayer[] | null>(null);
@@ -93,6 +94,7 @@ export default function RaceRoom({ sessionId, mode }: Props) {
     players,
     myPlayerId,
     isProjector,
+    seed,
     onLeave: () => router.push('/'),
     onRaceAgain: () => router.push('/'),
     onRaceFinished: handleRaceFinished,
