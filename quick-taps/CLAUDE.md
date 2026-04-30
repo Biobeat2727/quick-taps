@@ -61,23 +61,24 @@ The git root is `C:/Users/davey` (NOT `C:/Users/davey/quick-taps`). quick-taps i
 | `lib/ably/channels.ts` | Channel/message type definitions |
 | `app/track-test/page.tsx` | Dev sandbox — runs 3D scene with mock player |
 
-## Multiplayer synchronization architecture
-All clients run **independent but deterministic** physics simulations that produce identical races:
+## Multiplayer architecture — server simulation + client replay
+The server runs the full Rapier physics simulation and streams a compact recording to clients. No physics runs on the client.
 
-1. **Seed**: Server generates `raceSeed = Math.floor(Math.random() * 2**32)` in `start/route.ts` and includes it in the `game:started` Ably message.
-2. **PRNG**: `MarbleRaceScene.tsx` has a `mulberry32(seed)` function. Marble starting positions use `mulberry32(seed)` and launch impulses use `mulberry32(seed + 1)`.
-3. **Fixed timestep**: `<Physics timeStep={1/60}>` — Rapier WASM is cross-platform deterministic given identical inputs and step size.
-4. **First-frame impulse**: `GameLoop` (inside Canvas) applies impulses on the first `useFrame` call after `phase === 'racing'`, not via `setTimeout`. Eliminates timing variance.
-5. **Mode sync**: `game:started` carries `mode`; all clients navigate to `/race?mode=X&seed=N` simultaneously via Ably.
+1. **Simulation**: `lib/physics/simulate-race.ts` — runs Rapier at 60 Hz server-side, records all marble positions as a flat `Float32Array` (numFrames × numMarbles × 3), base64-encodes to Redis.
+2. **Seed**: `start/route.ts` generates `raceSeed`, passes to `simulateRace()`. PRNG `mulberry32(seed)` for start positions, `mulberry32(seed+1)` for impulses.
+3. **Recording format**: `{ numMarbles, numFrames, framesBase64, ranking }` — `ranking` is derived post-hoc by scanning frames for first frame each marble's z≥258.
+4. **Replay**: `ReplayDriver` component inside the Canvas accumulates real elapsed time, maps to a target frame index, and updates Three.js mesh positions directly (no React state). Frame 0 is the pre-impulse rest pose shown during countdown.
+5. **Race end**: Client ends the race as soon as all marble burst animations have fired (all marbles visually crossed z=258), not when the recording runs out. Falls back to recording end for marbles that never exit.
+6. **Safety cap**: `MAX_FRAMES = 3600` (1 min at 60 Hz).
 
 ## 3D scene notes
 - Orthographic camera, `zoom: 12` (track fills screen width)
 - `CameraRig` lerps camera Z to follow player's marble; projector mode stays at z=130 overview
 - **Funnel camera**: when marble enters funnel (`z >= 230`), camera sweeps to head-on view (`pos=[0,0,225]`, looking along +Z into funnel mouth). Dynamic zoom: `5 + 3*(1 - r/20)` wide at rim, tight at center. `camera.near=0.1` prevents geometry clipping.
-- `<Physics gravity={[0,0,15]} paused={phase !== 'racing'} timeStep={1/60}>` — gravity along +Z, paused during countdown, fixed 60Hz step
-- Finish detected in `GameLoop` when `rb.translation().z >= 258` (past funnel tip). Escaped marbles (entered funnel then `z<218` or `|x|>50` or `|y|>50`) are also marked finished.
-- Track: Act 1 peg grid (z=0–65) → Act 2 glass tubes (z=87–222) → Act 3 funnel (z=230–258, catch floor z=263, `visible={false}`)
-- Burst ring animation fires via `onMarbleFinish` callback when each marble passes z=258
+- Track: **Act 1** peg grid + bumpers (z=−10–65), back wall at z=−13 seals entry. **Act 2** glass tubes (z=87–222). **Act 3** funnel (z=230–258, tip radius=2, catch floor z=263).
+- Finish: first frame marble z≥258. Escaped marbles (entered funnel then `z<218` or `|x|>50` or `|y|>50`) or OOB marbles are marked done in simulation but ranked last by max-z reached.
+- Burst ring animation fires via `onMarbleFinish` callback when each marble first passes z=258 in the replay.
+- **Minimap**: DOM overlay on left side (28×240 px), updates marble dot positions each frame via `dotRefs` (no setState). Constants: `MM_H=240`, `MM_Z_MIN=−10`, `MM_Z_MAX=258`. Shows act section colour bands + yellow finish line.
 
 ## Environment variables
 See `.env.local` (not committed). Uses same Ably and Neon credentials as What's on Tap?
