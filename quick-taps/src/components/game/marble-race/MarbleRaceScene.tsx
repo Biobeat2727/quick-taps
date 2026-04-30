@@ -87,7 +87,7 @@ function CameraRig({
   const lookZRef = useRef(10);
   const upYRef   = useRef(0);
   const upZRef   = useRef(-1);
-  const zoomRef  = useRef(12);
+  const zoomRef  = useRef(10);
   const inFunnelRef = useRef(false);
 
   useFrame(() => {
@@ -118,7 +118,7 @@ function CameraRig({
         tLookZ = marbleZ;
         tUpY   = 0;
         tUpZ   = -1;
-        tZoom  = 12;
+        tZoom  = 10;
       }
     } else {
       tPosY  = 50;
@@ -371,7 +371,7 @@ export default function MarbleRaceScene({
       <Canvas
         style={{ width: '100%', height: '100%' }}
         orthographic
-        camera={{ position: [0, 50, 10], up: [0, 0, -1], zoom: 12 }}
+        camera={{ position: [0, 50, 10], up: [0, 0, -1], zoom: 10 }}
       >
         <CameraRig meshRefs={meshRefs} myIdx={myIdx} isProjector={isProjector} />
 
