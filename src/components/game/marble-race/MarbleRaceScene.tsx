@@ -496,9 +496,9 @@ export default function MarbleRaceScene({
       )}
 
       <div style={{
-          position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)',
+          position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)',
           width: 28, height: MM_H, zIndex: 10, pointerEvents: 'none',
-          background: 'rgba(0,0,0,0.70)', borderRadius: 8,
+          background: 'rgba(0,0,0,0.70)', borderRadius: '0 8px 8px 0',
           border: '1px solid rgba(255,255,255,0.12)',
           overflow: 'hidden',
         }}>
