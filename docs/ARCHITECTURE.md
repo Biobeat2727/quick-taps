@@ -78,6 +78,7 @@ Current games: Marble Race (see docs/MARBLE_RACE.md)
 - **Phone** (`/session/[id]`) — follow-cam, scrolls with the player's own marble
 - **Projector** — full track bird's eye view, all marbles visible. Served at the same 
   route with a `?projector=true` query param that renders the alternate layout
+  
 
 ## Leaderboard
 ⚠️ Out of scope for v1 — focus on getting Marble Race functional first.
