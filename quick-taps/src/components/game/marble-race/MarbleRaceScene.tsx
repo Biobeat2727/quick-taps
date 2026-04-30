@@ -67,6 +67,11 @@ interface Props {
 const FUNNEL_ENTRY_Z = 230;
 const FUNNEL_CENTER_Z = 244;
 
+// ── Minimap constants ─────────────────────────────────────────────────────────
+const MM_H     = 240; // px — must match container height in JSX
+const MM_Z_MIN = -10;
+const MM_Z_MAX = 258;
+
 function CameraRig({
   meshRefs,
   myIdx,
@@ -193,6 +198,7 @@ const PHYSICS_HZ = 60;
 function ReplayDriver({
   recording,
   meshRefs,
+  dotRefs,
   participants,
   myIdx,
   hudRef,
@@ -202,6 +208,7 @@ function ReplayDriver({
 }: {
   recording: DecodedRecording;
   meshRefs: React.RefObject<(Mesh | null)[]>;
+  dotRefs: React.RefObject<(HTMLDivElement | null)[]>;
   participants: Participant[];
   myIdx: number;
   hudRef: React.RefObject<HTMLDivElement | null>;
@@ -235,10 +242,15 @@ function ReplayDriver({
     const { numMarbles, frames } = recording;
     const base = targetFrame * numMarbles * 3;
 
-    // Update mesh positions
+    // Update mesh positions + minimap dots
     for (let i = 0; i < numMarbles; i++) {
       const off = base + i * 3;
       meshRefs.current[i]?.position.set(frames[off], frames[off + 1], frames[off + 2]);
+      const dot = dotRefs.current[i];
+      if (dot) {
+        const pct = Math.max(0, Math.min(1, (frames[off + 2] - MM_Z_MIN) / (MM_Z_MAX - MM_Z_MIN)));
+        dot.style.top = `${pct * MM_H}px`;
+      }
     }
 
     // Rank HUD (DOM mutation, no setState)
@@ -300,6 +312,7 @@ export default function MarbleRaceScene({
 
   // Mesh refs — one per marble (Three.js Mesh, no physics)
   const meshRefs = useRef<(Mesh | null)[]>(Array(participants.length).fill(null));
+  const dotRefs  = useRef<(HTMLDivElement | null)[]>(Array(participants.length).fill(null));
   const hudRef   = useRef<HTMLDivElement>(null);
 
   // Initialise marble positions to frame 0 (pre-impulse rest positions)
@@ -309,6 +322,11 @@ export default function MarbleRaceScene({
     for (let i = 0; i < numMarbles; i++) {
       const off = i * 3; // frame 0
       meshRefs.current[i]?.position.set(frames[off], frames[off + 1], frames[off + 2]);
+      const dot = dotRefs.current[i];
+      if (dot) {
+        const pct = Math.max(0, Math.min(1, (frames[off + 2] - MM_Z_MIN) / (MM_Z_MAX - MM_Z_MIN)));
+        dot.style.top = `${pct * MM_H}px`;
+      }
     }
   }, [recording]);
 
@@ -443,6 +461,7 @@ export default function MarbleRaceScene({
         <ReplayDriver
           recording={recording}
           meshRefs={meshRefs}
+          dotRefs={dotRefs}
           participants={participants}
           myIdx={myIdx}
           hudRef={hudRef}
@@ -472,6 +491,38 @@ export default function MarbleRaceScene({
           }} />
         </div>
       )}
+
+      <div style={{
+          position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)',
+          width: 28, height: MM_H, zIndex: 10, pointerEvents: 'none',
+          background: 'rgba(0,0,0,0.55)', borderRadius: 8,
+          border: '1px solid rgba(255,255,255,0.12)', backdropFilter: 'blur(4px)',
+          overflow: 'hidden',
+        }}>
+          {/* Act section colour bands */}
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '28%', background: 'rgba(120,160,255,0.10)' }} />
+          <div style={{ position: 'absolute', top: '36%', left: 0, right: 0, height: '51%', background: 'rgba(100,255,160,0.07)' }} />
+          <div style={{ position: 'absolute', top: '87%', left: 0, right: 0, height: '13%', background: 'rgba(255,200,80,0.13)' }} />
+          {/* Finish line */}
+          <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 2, background: '#ffdd33' }} />
+          {/* Marble dots — positions updated each frame via dotRefs */}
+          {participants.map((p, i) => (
+            <div
+              key={p.id}
+              ref={(el) => { dotRefs.current[i] = el; }}
+              style={{
+                position: 'absolute', left: '50%',
+                transform: 'translate(-50%, -50%)',
+                width: i === myIdx ? 10 : 7,
+                height: i === myIdx ? 10 : 7,
+                borderRadius: '50%',
+                background: p.color,
+                top: 0,
+                boxShadow: i === myIdx ? `0 0 5px ${p.color}` : undefined,
+              }}
+            />
+          ))}
+      </div>
 
       {phase === 'racing' && !isProjector && myIdx >= 0 && (
         <div
