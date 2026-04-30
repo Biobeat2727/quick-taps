@@ -34,11 +34,26 @@ for (let row = 0; row < 8; row++) {
   for (const x of xs) PEGS.push([x, 0, z]);
 }
 
+// Subset of pegs that act as pinball bumpers (high restitution)
+const BUMPER_COORDS: [number, number][] = [
+  [-6, 16], [6, 16], [9, 24], [0, 32], [-9, 40], [3, 40],
+];
+function isBumper(x: number, z: number) {
+  return BUMPER_COORDS.some(([bx, bz]) => bx === x && bz === z);
+}
+
+// Each tube has a unique Y depth lane (≈+10, +4, -4, -10) so paths never
+// physically intersect even when crossing on screen (adjacent lanes ≥6 units apart).
+// Each tube has its own asymmetric shape — no mirroring.
 const TUBE_PATHS: [number, number, number][][] = [
-  [[-9,0,87],[-9,0,100],[-9,8,130],[0,8,155],[9,8,180],[9,4,205],[9,0,215],[9,8,222]],
-  [[-3,0,87],[-3,0,100],[-3,3,130],[0,3,155],[3,3,180],[3,1,205],[3,0,215],[3,5,222]],
-  [[ 3,0,87],[ 3,0,100],[ 3,-3,130],[0,-3,155],[-3,-3,180],[-3,-1,205],[-3,0,215],[-3,-5,222]],
-  [[ 9,0,87],[ 9,0,100],[ 9,-8,130],[0,-8,155],[-9,-8,180],[-9,-4,205],[-9,0,215],[-9,-8,222]],
+  // Tube 1: y≈+10 — sweeps right early, reverses hard back left mid-track, wanders to exit
+  [[-9,0,87],[-9,0,100],[-9,10,115],[8,10,128],[11,10,140],[5,10,153],[-8,10,163],[-11,10,175],[-4,10,188],[6,10,200],[9,5,208],[9,0,215],[9,8,222]],
+  // Tube 2: y≈+4  — dips left first, then flicks hard right, lazy hook back to exit
+  [[-3,0,87],[-3,0,100],[-3,4,115],[-10,4,125],[2,4,138],[12,4,148],[7,4,162],[-5,4,177],[4,4,193],[-8,4,205],[3,3,210],[3,0,215],[3,5,222]],
+  // Tube 3: y≈-4  — tight crinkle: many small direction reversals
+  [[3,0,87],[3,0,100],[3,-4,115],[10,-4,127],[-9,-4,142],[5,-4,157],[-11,-4,172],[4,-4,188],[-5,-4,205],[-3,-3,210],[-3,0,215],[-3,-5,222]],
+  // Tube 4: y≈-10 — stays near entry side, then sharp unexpected dart left, slow drift to exit
+  [[9,0,87],[9,0,100],[9,-10,115],[9,-10,130],[6,-10,143],[-3,-10,155],[-12,-10,165],[-8,-10,178],[3,-10,192],[-2,-10,206],[-9,-5,210],[-9,0,215],[-9,-8,222]],
 ];
 
 // ── Geometry builders ─────────────────────────────────────────────────────────
@@ -46,7 +61,7 @@ const TUBE_PATHS: [number, number, number][][] = [
 
 function tubeTrimesh(path: [number, number, number][]) {
   const curve = new CatmullRomCurve3(path.map(([x, y, z]) => new Vector3(x, y, z)));
-  const geom = new TubeGeometry(curve, 60, 1.8, 12, false);
+  const geom = new TubeGeometry(curve, 80, 1.8, 12, false);
   const verts = new Float32Array(geom.attributes.position.array);
   const raw = new Uint32Array(geom.index!.array);
   const idx = new Uint32Array(raw.length);
@@ -58,7 +73,7 @@ function tubeTrimesh(path: [number, number, number][]) {
 }
 
 function funnelTrimesh() {
-  const geom = new CylinderGeometry(2, 40, 28, 64, 1, true);
+  const geom = new CylinderGeometry(2, 20, 28, 64, 1, true);
   const verts = new Float32Array(geom.attributes.position.array);
   const raw = new Uint32Array(geom.index!.array);
   const idx = new Uint32Array(raw.length);
@@ -92,6 +107,13 @@ export async function simulateRace(
 
   // ── Static geometry ──────────────────────────────────────────────────────
 
+  // Back wall — seals the entry of Act 1 so bumper-launched marbles can't escape backward.
+  // Matches the visual mesh added to MarbleRaceScene.tsx at the same position.
+  {
+    const b = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, 0, -13));
+    world.createCollider(RAPIER.ColliderDesc.cuboid(16, 3, 0.5).setFriction(0.1).setRestitution(0.5), b);
+  }
+
   // Outer walls (matches: position=[x,0,110], boxGeometry [1,4,240])
   for (const x of [-15, 15]) {
     const b = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(x, 0, 110));
@@ -101,13 +123,25 @@ export async function simulateRace(
     );
   }
 
-  // Pegs (matches: cylinderGeometry [0.6, 0.6, 3, 12], colliders="hull")
+  // Pegs — bumper pegs get high restitution to act as pinball bumpers
   for (const [x, y, z] of PEGS) {
     const b = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(x, y, z));
-    world.createCollider(
-      RAPIER.ColliderDesc.cylinder(1.5, 0.6).setRestitution(0.6).setFriction(0.1),
-      b,
-    );
+    const bumper = isBumper(x, z);
+    const desc = RAPIER.ColliderDesc.cylinder(1.5, 0.6).setFriction(0.05);
+    if (bumper) {
+      desc.setRestitution(2.2)
+          .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Max);
+    } else {
+      desc.setRestitution(0.6);
+    }
+    world.createCollider(desc, b);
+  }
+
+  // Ceiling and floor over peg grid — keeps marbles from flying out of the z-plane
+  // when they hit a bumper. Spans z=-10 to 68 (full peg region + margins).
+  for (const y of [2.5, -2.5]) {
+    const b = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, y, 29));
+    world.createCollider(RAPIER.ColliderDesc.cuboid(15, 0.1, 39).setFriction(0).setRestitution(0.2), b);
   }
 
   // Channel dividers (matches: position=[cx,0,79], boxGeometry [2,4,28])
@@ -162,7 +196,7 @@ export async function simulateRace(
     }
     const b = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
     world.createCollider(
-      RAPIER.ColliderDesc.trimesh(tv, idx, trimeshFlags).setFriction(0.04).setRestitution(0.4),
+      RAPIER.ColliderDesc.trimesh(tv, idx, trimeshFlags).setFriction(0.01).setRestitution(0.4),
       b,
     );
   }
@@ -199,7 +233,7 @@ export async function simulateRace(
 
   // ── Run simulation ────────────────────────────────────────────────────────
 
-  const MAX_FRAMES = 7200; // 2-minute safety cap at 60 Hz
+  const MAX_FRAMES = 3600; // 1-minute safety cap at 60 Hz
   const allFrames: Float32Array[] = [];
 
   // Frame 0: initial positions (pre-impulse) so the client can show marbles
@@ -220,10 +254,22 @@ export async function simulateRace(
 
   const finished = new Set<number>();
   const enteredFunnel = new Set<number>();
-  const ranking: string[] = [];
 
   for (let frame = 0; frame < MAX_FRAMES; frame++) {
     world.step();
+
+    // Drain orbital energy for marbles inside the funnel: apply a small radial
+    // impulse toward the funnel axis each step. Too weak to noticeably alter a
+    // normal straight-through transit, but strong enough to spiral out an orbiting marble.
+    for (let i = 0; i < n; i++) {
+      if (!finished.has(i) && enteredFunnel.has(i)) {
+        const p = bodies[i].translation();
+        const r = Math.sqrt(p.x * p.x + p.y * p.y);
+        if (r > 1) {
+          bodies[i].applyImpulse({ x: -p.x / r * 0.06, y: -p.y / r * 0.06, z: 0 }, true);
+        }
+      }
+    }
 
     const fd = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) {
@@ -232,17 +278,14 @@ export async function simulateRace(
 
       if (!finished.has(i)) {
         if (p.z >= 225) enteredFunnel.add(i);
-        if (p.z >= 258) {
-          finished.add(i);
-          ranking.push(players[i].id);
-        } else if (
+        if (
+          p.z >= 258 ||
           // Funnel escape: entered then bounced back out
           (enteredFunnel.has(i) && (p.z < 218 || Math.abs(p.x) > 50 || Math.abs(p.y) > 50)) ||
           // General out-of-bounds anywhere on the track (e.g. phased through a tube wall)
           Math.abs(p.x) > 60 || Math.abs(p.y) > 60 || p.z > 270
         ) {
           finished.add(i);
-          ranking.push(players[i].id);
         }
       }
     }
@@ -250,6 +293,40 @@ export async function simulateRace(
 
     if (finished.size >= n) break;
   }
+
+  // Derive ranking from the recorded frames: find the first frame where each
+  // marble's z >= 258 (the funnel tip). This ensures the ranking exactly matches
+  // the visual exit order the client sees during replay.
+  // Marbles that never reach z=258 (escaped, stuck) are ranked last by how deep
+  // they got into the funnel (highest max-z = closest to finish).
+  const exitFrame: (number | null)[] = new Array(n).fill(null);
+  for (let f = 1; f < allFrames.length; f++) {
+    const fd = allFrames[f];
+    for (let i = 0; i < n; i++) {
+      if (exitFrame[i] === null && fd[i * 3 + 2] >= 258) {
+        exitFrame[i] = f;
+      }
+    }
+  }
+
+  const maxZ: number[] = new Array(n).fill(-Infinity);
+  for (let f = 0; f < allFrames.length; f++) {
+    const fd = allFrames[f];
+    for (let i = 0; i < n; i++) {
+      if (exitFrame[i] === null) maxZ[i] = Math.max(maxZ[i], fd[i * 3 + 2]);
+    }
+  }
+
+  const ranking = Array.from({ length: n }, (_, i) => i)
+    .sort((a, b) => {
+      const fa = exitFrame[a];
+      const fb = exitFrame[b];
+      if (fa !== null && fb !== null) return fa - fb || a - b;
+      if (fa !== null) return -1;
+      if (fb !== null) return 1;
+      return maxZ[b] - maxZ[a] || a - b;
+    })
+    .map(i => players[i].id);
 
   // Pack all frames into a single Float32Array and base64-encode for Redis.
   const numFrames = allFrames.length;
