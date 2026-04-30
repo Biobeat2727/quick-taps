@@ -26,11 +26,26 @@ for (let row = 0; row < 8; row++) {
   for (const x of xs) PEGS.push([x, 0, z]);
 }
 
+// Subset of pegs that act as pinball bumpers (must match simulate-race.ts)
+const BUMPER_COORDS: [number, number][] = [
+  [-6, 16], [6, 16], [9, 24], [0, 32], [-9, 40], [3, 40],
+];
+function isBumper(x: number, z: number) {
+  return BUMPER_COORDS.some(([bx, bz]) => bx === x && bz === z);
+}
+
+// Each tube has a unique Y depth lane (≈+10, +4, -4, -10) so paths never
+// physically intersect even when crossing on screen (adjacent lanes ≥6 units apart).
+// Each tube has its own asymmetric shape — no mirroring.
 const TUBE_PATHS: [number, number, number][][] = [
-  [[-9,0,87],[-9,0,100],[-9,8,130],[0,8,155],[9,8,180],[9,4,205],[9,0,215],[9,8,222]],
-  [[-3,0,87],[-3,0,100],[-3,3,130],[0,3,155],[3,3,180],[3,1,205],[3,0,215],[3,5,222]],
-  [[ 3,0,87],[ 3,0,100],[ 3,-3,130],[0,-3,155],[-3,-3,180],[-3,-1,205],[-3,0,215],[-3,-5,222]],
-  [[ 9,0,87],[ 9,0,100],[ 9,-8,130],[0,-8,155],[-9,-8,180],[-9,-4,205],[-9,0,215],[-9,-8,222]],
+  // Tube 1: y≈+10 — sweeps right early, reverses hard back left mid-track, wanders to exit
+  [[-9,0,87],[-9,0,100],[-9,10,115],[8,10,128],[11,10,140],[5,10,153],[-8,10,163],[-11,10,175],[-4,10,188],[6,10,200],[9,5,208],[9,0,215],[9,8,222]],
+  // Tube 2: y≈+4  — dips left first, then flicks hard right, lazy hook back to exit
+  [[-3,0,87],[-3,0,100],[-3,4,115],[-10,4,125],[2,4,138],[12,4,148],[7,4,162],[-5,4,177],[4,4,193],[-8,4,205],[3,3,210],[3,0,215],[3,5,222]],
+  // Tube 3: y≈-4  — tight crinkle: many small direction reversals
+  [[3,0,87],[3,0,100],[3,-4,115],[10,-4,127],[-9,-4,142],[5,-4,157],[-11,-4,172],[4,-4,188],[-5,-4,205],[-3,-3,210],[-3,0,215],[-3,-5,222]],
+  // Tube 4: y≈-10 — stays near entry side, then sharp unexpected dart left, slow drift to exit
+  [[9,0,87],[9,0,100],[9,-10,115],[9,-10,130],[6,-10,143],[-3,-10,155],[-12,-10,165],[-8,-10,178],[3,-10,192],[-2,-10,206],[-9,-5,210],[-9,0,215],[-9,-8,222]],
 ];
 
 // ── Props ─────────────────────────────────────────────────────────────────────
@@ -126,7 +141,9 @@ function CameraRig({
 
 // ── GlassTube ─────────────────────────────────────────────────────────────────
 
-function GlassTube({ path }: { path: [number, number, number][] }) {
+const TUBE_COLORS = ['#ff5555', '#5588ff', '#44cc77', '#ffdd33'];
+
+function GlassTube({ path, color }: { path: [number, number, number][]; color: string }) {
   const outerGeom = useMemo(() => {
     const curve = new CatmullRomCurve3(path.map(([x, y, z]) => new Vector3(x, y, z)));
     return new TubeGeometry(curve, 120, 2.0, 16, false);
@@ -135,7 +152,7 @@ function GlassTube({ path }: { path: [number, number, number][] }) {
   return (
     <mesh geometry={outerGeom}>
       <meshPhysicalMaterial
-        color="#aaddff"
+        color={color}
         transmission={0.85}
         roughness={0}
         thickness={0.5}
@@ -150,7 +167,7 @@ function GlassTube({ path }: { path: [number, number, number][] }) {
 // ── Funnel ────────────────────────────────────────────────────────────────────
 
 function Funnel() {
-  const visGeom = useMemo(() => new CylinderGeometry(2, 40, 28, 64, 1, true), []);
+  const visGeom = useMemo(() => new CylinderGeometry(2, 20, 28, 64, 1, true), []);
   return (
     <mesh
       geometry={visGeom}
@@ -211,18 +228,6 @@ function ReplayDriver({
       recording.numFrames - 1,
     );
 
-    // Race over — fire completion callback once
-    if (targetFrame >= recording.numFrames - 1 && elapsedRef.current * PHYSICS_HZ >= recording.numFrames - 1) {
-      if (!doneRef.current) {
-        doneRef.current = true;
-        const ranked = recording.ranking
-          .map(id => participants.find(p => p.id === id))
-          .filter((p): p is Participant => !!p);
-        onAllFinished(ranked);
-      }
-      return;
-    }
-
     // Only update if we've actually moved to a new frame
     if (targetFrame <= lastFrameRef.current) return;
     lastFrameRef.current = targetFrame;
@@ -255,6 +260,18 @@ function ReplayDriver({
           onMarbleFinish(participants[i].color);
         }
       }
+    }
+
+    // End the race as soon as every marble has visually exited (burst fired) OR
+    // when the recording runs out (fallback for marbles that never reach z=258).
+    const allExited = firedFinish.current.size >= numMarbles;
+    const recordingDone = targetFrame >= recording.numFrames - 1;
+    if (!doneRef.current && (allExited || recordingDone)) {
+      doneRef.current = true;
+      const ranked = recording.ranking
+        .map(id => participants.find(p => p.id === id))
+        .filter((p): p is Participant => !!p);
+      onAllFinished(ranked);
     }
   });
 
@@ -340,6 +357,12 @@ export default function MarbleRaceScene({
         <directionalLight position={[10, 20, 5]} intensity={1.5} castShadow />
         <pointLight position={[0, 15, 155]} intensity={0.8} />
 
+        {/* Act 1 back wall — seals the entry so bumper-launched marbles can't escape backward */}
+        <mesh position={[0, 0, -13]}>
+          <boxGeometry args={[32, 6, 1]} />
+          <meshStandardMaterial color="#aaaaaa" />
+        </mesh>
+
         {/* Outer walls (visual only) */}
         {[-15, 15].map(x => (
           <mesh key={`wall-${x}`} position={[x, 0, 110]}>
@@ -348,13 +371,28 @@ export default function MarbleRaceScene({
           </mesh>
         ))}
 
-        {/* Act 1 — peg grid */}
-        {PEGS.map(([x, y, z], i) => (
-          <mesh key={`peg-${i}`} position={[x, y, z]}>
-            <cylinderGeometry args={[0.6, 0.6, 3, 12]} />
-            <meshStandardMaterial color="#dddddd" />
+        {/* Act 1 — ceiling & floor panels to contain bumper launches */}
+        {[2.5, -2.5].map(y => (
+          <mesh key={`pegcap-${y}`} position={[0, y, 29]}>
+            <boxGeometry args={[30, 0.15, 78]} />
+            <meshStandardMaterial color="#aaddff" transparent opacity={0.07} />
           </mesh>
         ))}
+
+        {/* Act 1 — peg grid */}
+        {PEGS.map(([x, y, z], i) => {
+          const bumper = isBumper(x, z);
+          return (
+            <mesh key={`peg-${i}`} position={[x, y, z]}>
+              <cylinderGeometry args={[bumper ? 0.75 : 0.6, bumper ? 0.75 : 0.6, 3, 12]} />
+              <meshStandardMaterial
+                color={bumper ? '#ff8800' : '#dddddd'}
+                emissive={bumper ? '#ff5500' : '#000000'}
+                emissiveIntensity={bumper ? 0.5 : 0}
+              />
+            </mesh>
+          );
+        })}
 
         {/* Transition — channel dividers */}
         {[-6, 0, 6].map(cx => (
@@ -378,7 +416,7 @@ export default function MarbleRaceScene({
 
         {/* Act 2 — glass tubes */}
         {TUBE_PATHS.map((path, i) => (
-          <GlassTube key={`tube-${i}`} path={path} />
+          <GlassTube key={`tube-${i}`} path={path} color={TUBE_COLORS[i]} />
         ))}
 
         {/* Act 3 — funnel */}
