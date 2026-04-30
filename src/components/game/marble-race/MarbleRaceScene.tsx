@@ -96,11 +96,14 @@ function CameraRig({
 
     if (!isProjector && myIdx >= 0 && meshRefs.current[myIdx]) {
       const marbleZ = meshRefs.current[myIdx]!.position.z;
-      if (marbleZ >= FUNNEL_ENTRY_Z) inFunnelRef.current = true;
-
-      if (inFunnelRef.current) {
+      if (marbleZ >= FUNNEL_ENTRY_Z && !inFunnelRef.current) {
+        inFunnelRef.current = true;
         camera.near = 0.1;
         camera.far  = 2000;
+        camera.updateProjectionMatrix();
+      }
+
+      if (inFunnelRef.current) {
         tPosY  = 0;
         tPosZ  = 225;
         tLookZ = FUNNEL_CENTER_Z;
@@ -132,13 +135,16 @@ function CameraRig({
     lookZRef.current += (tLookZ - lookZRef.current) * α;
     upYRef.current   += (tUpY   - upYRef.current)   * α;
     upZRef.current   += (tUpZ   - upZRef.current)   * α;
+    const prevZoom = zoomRef.current;
     zoomRef.current  += (tZoom  - zoomRef.current)  * α;
 
     camera.position.set(0, posYRef.current, posZRef.current);
     camera.up.set(0, upYRef.current, upZRef.current);
     camera.lookAt(0, 0, lookZRef.current);
-    camera.zoom = zoomRef.current;
-    camera.updateProjectionMatrix();
+    if (Math.abs(zoomRef.current - prevZoom) > 0.001) {
+      camera.zoom = zoomRef.current;
+      camera.updateProjectionMatrix();
+    }
   });
 
   return null;
@@ -156,13 +162,12 @@ function GlassTube({ path, color }: { path: [number, number, number][]; color: s
 
   return (
     <mesh geometry={outerGeom}>
-      <meshPhysicalMaterial
+      <meshStandardMaterial
         color={color}
-        transmission={0.85}
-        roughness={0}
-        thickness={0.5}
         transparent
-        opacity={0.25}
+        opacity={0.22}
+        roughness={0.05}
+        metalness={0.1}
         side={DoubleSide}
       />
     </mesh>
@@ -178,7 +183,6 @@ function Funnel() {
       geometry={visGeom}
       position={[0, 0, 244]}
       rotation={[Math.PI / 2, 0, 0]}
-      receiveShadow
     >
       <meshStandardMaterial color="#6699aa" side={DoubleSide} transparent opacity={0.6} />
     </mesh>
@@ -371,8 +375,8 @@ export default function MarbleRaceScene({
       >
         <CameraRig meshRefs={meshRefs} myIdx={myIdx} isProjector={isProjector} />
 
-        <ambientLight intensity={0.5} />
-        <directionalLight position={[10, 20, 5]} intensity={1.5} castShadow />
+        <ambientLight intensity={0.6} />
+        <directionalLight position={[10, 20, 5]} intensity={1.5} />
         <pointLight position={[0, 15, 155]} intensity={0.8} />
 
         {/* Act 1 back wall — seals the entry so bumper-launched marbles can't escape backward */}
@@ -445,13 +449,12 @@ export default function MarbleRaceScene({
           <mesh
             key={p.id}
             ref={(el) => { meshRefs.current[i] = el; }}
-            castShadow
           >
-            <sphereGeometry args={[1, 32, 32]} />
-            <meshPhysicalMaterial
+            <sphereGeometry args={[1, 16, 16]} />
+            <meshStandardMaterial
               color={p.color}
-              roughness={0.2}
-              metalness={0.1}
+              roughness={0.25}
+              metalness={0.15}
               emissive={i === myIdx ? p.color : '#000000'}
               emissiveIntensity={i === myIdx ? 0.3 : 0}
             />
@@ -495,8 +498,8 @@ export default function MarbleRaceScene({
       <div style={{
           position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)',
           width: 28, height: MM_H, zIndex: 10, pointerEvents: 'none',
-          background: 'rgba(0,0,0,0.55)', borderRadius: 8,
-          border: '1px solid rgba(255,255,255,0.12)', backdropFilter: 'blur(4px)',
+          background: 'rgba(0,0,0,0.70)', borderRadius: 8,
+          border: '1px solid rgba(255,255,255,0.12)',
           overflow: 'hidden',
         }}>
           {/* Act section colour bands */}
@@ -528,8 +531,8 @@ export default function MarbleRaceScene({
         <div
           style={{
             position: 'absolute', top: 16, right: 16, zIndex: 10,
-            background: 'rgba(0,0,0,0.58)', borderRadius: 14,
-            padding: '5px 14px', backdropFilter: 'blur(4px)',
+            background: 'rgba(0,0,0,0.72)', borderRadius: 14,
+            padding: '5px 14px',
             border: '1px solid rgba(255,255,255,0.1)',
           }}
         >
