@@ -93,7 +93,7 @@ export default function BowlTestPage() {
   }
 
   return (
-    <div className="w-screen h-screen overflow-hidden bg-gray-950 relative">
+    <div className="w-full overflow-hidden bg-gray-950 relative" style={{ height: '100dvh' }}>
       <BowlingScene
         myPlayerId={PLAYER_ID}
         pinState={gameState.pinState}
