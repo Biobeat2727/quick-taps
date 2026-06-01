@@ -76,7 +76,8 @@ export function useThrowInput(
     setIsCharging(false);
 
     onThrowRef.current({
-      direction: aimXRef.current * (Math.PI / 6),
+      startX: aimXRef.current * 0.45,
+      direction: 0,
       power: chargeProgressRef.current,
       spin: 0,
       pinState: [], // BowlingScene overrides with real pinState

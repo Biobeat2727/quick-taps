@@ -1,4 +1,5 @@
 export interface ThrowParams {
+  startX: number;      // ball starting X position, clamped to ±0.45
   direction: number;   // radians, 0=straight, +right/-left, range ±(π/6)
   power: number;       // 0–1 → maps to speed 2–8 m/s
   spin: number;        // -1 to +1 → angular velocity on Y

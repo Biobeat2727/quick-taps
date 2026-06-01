@@ -98,8 +98,7 @@ function AimSystem({
     }
 
     const aimX = aimXRef.current ?? 0;
-    const dir = aimX * (Math.PI / 6);
-    const startX = Math.max(-0.45, Math.min(0.45, Math.sin(dir) * 0.5));
+    const startX = aimX * 0.45; // drag maps directly to lane position
 
     ball.position.set(startX, BALL_RADIUS, 0.3);
 
@@ -109,9 +108,9 @@ function AimSystem({
       const t = (i + 1) * DOT_SPACING;
       dot.visible = true;
       dot.position.set(
-        startX + Math.sin(dir) * t,
+        startX, // straight throw — x stays constant
         DOT_Y,
-        0.3 + Math.cos(dir) * t,
+        0.3 + t,
       );
     }
   });
@@ -136,9 +135,7 @@ function CameraRig({
 
   useFrame(() => {
     if (phase === 'aiming' || phase === 'throwing') {
-      const aimX = aimXRef.current ?? 0;
-      const dir = aimX * (Math.PI / 6);
-      const ballX = Math.max(-0.45, Math.min(0.45, Math.sin(dir) * 0.5));
+      const ballX = (aimXRef.current ?? 0) * 0.45;
       camTarget.current.set(ballX * 0.4, 1.0, -2);
       lookTarget.current.set(ballX * 0.15, 0.3, 18);
     } else if (phase === 'replay') {

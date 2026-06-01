@@ -20,7 +20,7 @@ export async function simulateBowl(params: ThrowParams): Promise<BowlingRawRecor
     rapierInited = true;
   }
 
-  const { direction, power, spin, pinState } = params;
+  const { startX: rawStartX, direction, power, spin, pinState } = params;
   const speed = 2 + power * 6;
 
   const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
@@ -96,7 +96,7 @@ export async function simulateBowl(params: ThrowParams): Promise<BowlingRawRecor
 
   // ── Dynamic ball ─────────────────────────────────────────────────────────
 
-  const startX = Math.max(-0.45, Math.min(0.45, Math.sin(direction) * 0.5));
+  const startX = Math.max(-0.45, Math.min(0.45, rawStartX));
   const ballBody = world.createRigidBody(
     RAPIER.RigidBodyDesc.dynamic().setTranslation(startX, BALL_RADIUS, 0.3),
   );
