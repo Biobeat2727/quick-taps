@@ -7,7 +7,6 @@ import { PIN_POSITIONS, BALL_RADIUS, PIN_PROFILE } from '@/lib/bowling/bowling-c
 import type { ThrowParams, BowlingDecodedRecording } from '@/types/bowling';
 import type { BowlingPhase } from './bowling-shared';
 import { useThrowInput } from './useThrowInput';
-import { NeonSign } from './NeonSign';
 
 export interface BowlingSceneProps {
   myPlayerId:       string;
@@ -294,7 +293,111 @@ function SceneContents({
         <sphereGeometry args={[BALL_RADIUS, 16, 16]} />
         <meshStandardMaterial color="#1a1a2e" roughness={0.3} metalness={0.4} />
       </mesh>
+
+      {/* Fascia overhang above the pins */}
+      <NeonSignBoard />
     </>
+  );
+}
+
+// ── NeonSignBoard ─────────────────────────────────────────────────────────────
+// Canvas texture rendered on a dark backing board above the pin deck,
+// like the fascia overhang in a real bowling alley.
+
+function NeonSignBoard() {
+  const matRef = useRef<THREE.MeshBasicMaterial>(null!);
+
+  useEffect(() => {
+    const W = 1024, H = 512;
+    const canvas = document.createElement('canvas');
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext('2d')!;
+    let texture: THREE.CanvasTexture | null = null;
+
+    document.fonts.load('700 120px "Dancing Script"').then(() => {
+      ctx.clearRect(0, 0, W, H);
+      ctx.scale(-1, 1);
+      ctx.translate(-W, 0);
+
+      function drawNeon(text: string, cx: number, cy: number, size: number, color: string) {
+        ctx.font = `700 ${size}px "Dancing Script"`;
+        ctx.textAlign = 'center';
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+
+        // Ambient soft bloom
+        ctx.globalAlpha = 0.12;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = size * 0.18;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 45;
+        ctx.strokeText(text, cx, cy);
+
+        // Dark glass tube rim
+        ctx.globalAlpha = 0.8;
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = size * 0.075;
+        ctx.strokeText(text, cx, cy);
+
+        // Colored neon gas
+        ctx.globalAlpha = 0.95;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = size * 0.048;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 16;
+        ctx.strokeText(text, cx, cy);
+
+        // Hot white core
+        ctx.globalAlpha = 0.75;
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = size * 0.018;
+        ctx.shadowBlur = 6;
+        ctx.strokeText(text, cx, cy);
+
+        // Specular glass highlight (offset up slightly)
+        ctx.globalAlpha = 0.45;
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = size * 0.008;
+        ctx.shadowBlur = 0;
+        ctx.strokeText(text, cx, cy - size * 0.022);
+
+        ctx.globalAlpha = 1;
+        ctx.shadowBlur = 0;
+      }
+
+      drawNeon('Quick Taps', W / 2, 200, 155, '#ff2d78');
+      drawNeon('Bowling',    W / 2, 400, 125, '#00e5ff');
+
+      texture = new THREE.CanvasTexture(canvas);
+      if (matRef.current) {
+        matRef.current.map = texture;
+        matRef.current.needsUpdate = true;
+      }
+    });
+
+    return () => { texture?.dispose(); };
+  }, []);
+
+  // Board: 2 m wide × 1 m tall — matches canvas 2:1 aspect ratio
+  const bW = 2.0, bH = 1.0;
+
+  return (
+    // y=1.75 centers the board at 1.75 m — comfortably above the pins (max y≈0.38)
+    // z=19.0 places it just behind the back row of pins (z≈18.3)
+    <group position={[0, 1.75, 19.0]}>
+      {/* Dark backing board */}
+      <mesh>
+        <boxGeometry args={[bW + 0.1, bH + 0.1, 0.06]} />
+        <meshStandardMaterial color="#0d0a04" roughness={0.9} metalness={0.1} />
+      </mesh>
+      {/* Sign face — rotated 180° around Y to face the bowler (camera is in −z) */}
+      <mesh rotation={[0, Math.PI, 0]} position={[0, 0, -0.032]}>
+        <planeGeometry args={[bW, bH]} />
+        <meshBasicMaterial ref={matRef} transparent />
+      </mesh>
+    </group>
   );
 }
 
@@ -487,19 +590,6 @@ export function BowlingScene({
           spinRef={spinRef}
         />
       </Canvas>
-
-      {/* Neon sign — floats above the pin deck */}
-      <div style={{
-        position: 'absolute',
-        top: '14%',
-        left: '50%',
-        transform: 'translateX(-50%)',
-        width: 'min(58vw, 400px)',
-        pointerEvents: 'none',
-        userSelect: 'none',
-      }}>
-        <NeonSign />
-      </div>
 
       {/* Oscillating power bar */}
       {canThrow && <PowerBar powerRef={powerRef} enabled={canThrow} />}
