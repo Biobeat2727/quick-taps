@@ -48,11 +48,9 @@ function BowlingReplayDriver({
     if (f <= lastFrame.current) return;
     lastFrame.current = f;
 
-    // Update ball position
     const bf = recording.ballFrames;
     if (ballRef.current) ballRef.current.position.set(bf[f * 3], bf[f * 3 + 1], bf[f * 3 + 2]);
 
-    // Update pin positions + quaternions
     const pf = recording.pinFrames;
     for (let i = 0; i < 10; i++) {
       const pin = pinRefs.current?.[i];
@@ -71,23 +69,74 @@ function BowlingReplayDriver({
   return null;
 }
 
+// ── AimSystem ─────────────────────────────────────────────────────────────────
+// Updates ball position + aim line each frame during aiming. No React state reads.
+
+function AimSystem({
+  aimXRef,
+  ballRef,
+  aimLineRef,
+  phase,
+}: {
+  aimXRef: React.RefObject<number>;
+  ballRef: React.RefObject<THREE.Mesh>;
+  aimLineRef: React.RefObject<THREE.Mesh>;
+  phase: BowlingPhase;
+}) {
+  useFrame(() => {
+    const aimLine = aimLineRef.current;
+    const ball = ballRef.current;
+    if (!aimLine || !ball) return;
+
+    if (phase !== 'aiming') {
+      aimLine.visible = false;
+      return;
+    }
+
+    const aimX = aimXRef.current ?? 0;
+    const dir = aimX * (Math.PI / 6);
+    const startX = Math.max(-0.45, Math.min(0.45, Math.sin(dir) * 0.5));
+
+    // Slide ball with aim
+    ball.position.set(startX, BALL_RADIUS, 0.3);
+
+    // Position aim line from ball toward pins
+    const len = 17;
+    aimLine.visible = true;
+    aimLine.position.set(
+      startX + Math.sin(dir) * len / 2,
+      0.009,
+      0.3 + Math.cos(dir) * len / 2,
+    );
+    aimLine.rotation.set(0, -dir, 0);
+  });
+
+  return null;
+}
+
 // ── CameraRig ─────────────────────────────────────────────────────────────────
 
 function CameraRig({
   phase,
   ballRef,
+  aimXRef,
 }: {
   phase: BowlingPhase;
   ballRef: React.RefObject<THREE.Mesh>;
+  aimXRef: React.RefObject<number>;
 }) {
   const { camera } = useThree();
-  const camTarget = useRef(new THREE.Vector3(0, 3.5, -1));
-  const lookTarget = useRef(new THREE.Vector3(0, 0, 15));
+  const camTarget = useRef(new THREE.Vector3(0, 1.0, -2));
+  const lookTarget = useRef(new THREE.Vector3(0, 0.3, 18));
 
   useFrame(() => {
     if (phase === 'aiming' || phase === 'throwing') {
-      camTarget.current.set(0, 3.5, -1);
-      lookTarget.current.set(0, 0, 15);
+      const aimX = aimXRef.current ?? 0;
+      const dir = aimX * (Math.PI / 6);
+      const ballX = Math.max(-0.45, Math.min(0.45, Math.sin(dir) * 0.5));
+      // Camera slightly behind and to the side of the ball, looking at pin formation
+      camTarget.current.set(ballX * 0.4, 1.0, -2);
+      lookTarget.current.set(ballX * 0.15, 0.3, 18);
     } else if (phase === 'replay') {
       const bx = ballRef.current?.position.x ?? 0;
       const bz = ballRef.current?.position.z ?? 0.3;
@@ -108,18 +157,22 @@ function SceneContents({
   phase,
   recording,
   onReplayComplete,
+  aimXRef,
 }: {
   pinState: boolean[];
   phase: BowlingPhase;
   recording: BowlingDecodedRecording | null;
   onReplayComplete: (knockedPins: boolean[]) => void;
+  aimXRef: React.RefObject<number>;
 }) {
   const pinRefs = useRef<(THREE.Mesh | null)[]>(Array(10).fill(null));
   const ballRef = useRef<THREE.Mesh>(null!);
+  const aimLineRef = useRef<THREE.Mesh>(null!);
 
   return (
     <>
-      <CameraRig phase={phase} ballRef={ballRef} />
+      <CameraRig phase={phase} ballRef={ballRef} aimXRef={aimXRef} />
+      <AimSystem aimXRef={aimXRef} ballRef={ballRef} aimLineRef={aimLineRef} phase={phase} />
 
       {recording && (
         <BowlingReplayDriver
@@ -155,7 +208,13 @@ function SceneContents({
         <meshStandardMaterial color="#222222" />
       </mesh>
 
-      {/* Pins — only rendered if standing; position reset via JSX prop each render */}
+      {/* Aim line — managed by AimSystem */}
+      <mesh ref={aimLineRef} visible={false}>
+        <boxGeometry args={[0.022, 0.001, 17]} />
+        <meshBasicMaterial color="#ffffff" opacity={0.45} transparent />
+      </mesh>
+
+      {/* Pins */}
       {PIN_POSITIONS.map(([px, py, pz], i) =>
         pinState[i] ? (
           <mesh
@@ -169,10 +228,16 @@ function SceneContents({
         ) : null,
       )}
 
-      {/* Ball */}
+      {/* Ball — position managed by AimSystem (aiming) or BowlingReplayDriver (replay) */}
       <mesh ref={ballRef} position={[0, BALL_RADIUS, 0.3]}>
         <sphereGeometry args={[BALL_RADIUS, 16, 16]} />
-        <meshStandardMaterial color="#1a1a2e" roughness={0.4} metalness={0.3} />
+        <meshStandardMaterial
+          color="#1a1a2e"
+          roughness={0.4}
+          metalness={0.3}
+          emissive={phase === 'aiming' ? '#2244aa' : '#000000'}
+          emissiveIntensity={phase === 'aiming' ? 0.4 : 0}
+        />
       </mesh>
     </>
   );
@@ -190,8 +255,8 @@ export function BowlingScene({
   isMyTurn,
 }: BowlingSceneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const aimXRef = useRef(0);
 
-  // Wrap onThrow to inject current pinState (hook passes pinState: [])
   const handleThrowFromInput = useCallback(
     (params: ThrowParams) => {
       onThrow({ ...params, pinState });
@@ -205,35 +270,25 @@ export function BowlingScene({
     handleThrowFromInput,
   );
 
+  // Sync aimXRef with aimX state (ref read in useFrame, state drives DOM)
+  aimXRef.current = aimX;
+
   return (
     <div ref={containerRef} className="w-full h-full relative">
-      <Canvas camera={{ fov: 45, position: [0, 1.2, -2.5], near: 0.1, far: 100 }}>
+      <Canvas camera={{ fov: 55, position: [0, 1.0, -2], near: 0.1, far: 100 }}>
         <SceneContents
           pinState={pinState}
           phase={phase}
           recording={recording}
           onReplayComplete={onReplayComplete}
+          aimXRef={aimXRef}
         />
       </Canvas>
 
-      {/* Aim indicator overlay */}
       {isMyTurn && phase === 'aiming' && (
-        <div className="absolute bottom-8 left-0 right-0 flex flex-col items-center pointer-events-none select-none">
-          {/* Direction arrow */}
-          <div
-            style={{
-              transform: `translateX(${aimX * 64}px) rotate(${aimX * 25}deg)`,
-              width: 0,
-              height: 0,
-              borderLeft: '12px solid transparent',
-              borderRight: '12px solid transparent',
-              borderBottom: '28px solid rgba(255,255,255,0.85)',
-            }}
-          />
-          <p className="text-white text-sm mt-2 opacity-60 tracking-wide">
-            {gesturePhase === 'throwing' ? 'Release to throw!' : 'Swipe up to throw'}
-          </p>
-        </div>
+        <p className="absolute bottom-8 left-0 right-0 text-center text-white text-sm opacity-50 pointer-events-none select-none tracking-wide">
+          {gesturePhase === 'throwing' ? 'Release to throw!' : 'Swipe up to throw'}
+        </p>
       )}
     </div>
   );
