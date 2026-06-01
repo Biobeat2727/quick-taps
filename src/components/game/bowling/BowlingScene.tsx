@@ -189,6 +189,16 @@ function CameraRig({
   return null;
 }
 
+// Triangle shape for lane rangefinder arrows — tip toward +Z (toward pins) after RX(PI/2)
+const arrowShape = (() => {
+  const s = new THREE.Shape();
+  s.moveTo(0, 0.042);         // tip
+  s.lineTo(-0.022, -0.026);   // base left
+  s.lineTo( 0.022, -0.026);   // base right
+  s.closePath();
+  return s;
+})();
+
 // ── SceneContents ─────────────────────────────────────────────────────────────
 
 function SceneContents({
@@ -257,6 +267,14 @@ function SceneContents({
         <boxGeometry args={[1.06, 0.002, 0.03]} />
         <meshStandardMaterial color="#222222" />
       </mesh>
+
+      {/* Lane rangefinder arrows — 7 triangles at ~4.5 ft past foul line */}
+      {([-0.408, -0.272, -0.136, 0, 0.136, 0.272, 0.408] as const).map((x, i) => (
+        <mesh key={i} position={[x, 0.007, 1.5]} rotation={[Math.PI / 2, 0, 0]}>
+          <shapeGeometry args={[arrowShape]} />
+          <meshStandardMaterial color="#5a2d0c" roughness={0.8} side={THREE.DoubleSide} />
+        </mesh>
+      ))}
 
       {/* Trajectory dots — curved by AimSystem via dotRefs */}
       {Array.from({ length: DOT_COUNT }, (_, i) => {
