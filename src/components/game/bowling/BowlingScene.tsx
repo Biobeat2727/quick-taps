@@ -70,26 +70,30 @@ function BowlingReplayDriver({
 }
 
 // ── AimSystem ─────────────────────────────────────────────────────────────────
-// Updates ball position + aim line each frame during aiming. No React state reads.
+// Moves ball laterally and renders trajectory dots.
+
+const DOT_COUNT = 7;
+const DOT_SPACING = 2; // units between dots
+const DOT_Y = 0.065;   // slightly above lane surface
 
 function AimSystem({
   aimXRef,
   ballRef,
-  aimLineRef,
+  dotRefs,
   phase,
 }: {
   aimXRef: React.RefObject<number>;
   ballRef: React.RefObject<THREE.Mesh>;
-  aimLineRef: React.RefObject<THREE.Mesh>;
+  dotRefs: React.RefObject<THREE.Mesh[]>;
   phase: BowlingPhase;
 }) {
   useFrame(() => {
-    const aimLine = aimLineRef.current;
     const ball = ballRef.current;
-    if (!aimLine || !ball) return;
+    const dots = dotRefs.current;
+    if (!ball || !dots) return;
 
     if (phase !== 'aiming') {
-      aimLine.visible = false;
+      dots.forEach(d => { if (d) d.visible = false; });
       return;
     }
 
@@ -97,18 +101,19 @@ function AimSystem({
     const dir = aimX * (Math.PI / 6);
     const startX = Math.max(-0.45, Math.min(0.45, Math.sin(dir) * 0.5));
 
-    // Slide ball with aim
     ball.position.set(startX, BALL_RADIUS, 0.3);
 
-    // Position aim line from ball toward pins
-    const len = 17;
-    aimLine.visible = true;
-    aimLine.position.set(
-      startX + Math.sin(dir) * len / 2,
-      0.009,
-      0.3 + Math.cos(dir) * len / 2,
-    );
-    aimLine.rotation.set(0, -dir, 0);
+    for (let i = 0; i < DOT_COUNT; i++) {
+      const dot = dots[i];
+      if (!dot) continue;
+      const t = (i + 1) * DOT_SPACING;
+      dot.visible = true;
+      dot.position.set(
+        startX + Math.sin(dir) * t,
+        DOT_Y,
+        0.3 + Math.cos(dir) * t,
+      );
+    }
   });
 
   return null;
@@ -134,7 +139,6 @@ function CameraRig({
       const aimX = aimXRef.current ?? 0;
       const dir = aimX * (Math.PI / 6);
       const ballX = Math.max(-0.45, Math.min(0.45, Math.sin(dir) * 0.5));
-      // Camera slightly behind and to the side of the ball, looking at pin formation
       camTarget.current.set(ballX * 0.4, 1.0, -2);
       lookTarget.current.set(ballX * 0.15, 0.3, 18);
     } else if (phase === 'replay') {
@@ -167,12 +171,12 @@ function SceneContents({
 }) {
   const pinRefs = useRef<(THREE.Mesh | null)[]>(Array(10).fill(null));
   const ballRef = useRef<THREE.Mesh>(null!);
-  const aimLineRef = useRef<THREE.Mesh>(null!);
+  const dotRefs = useRef<THREE.Mesh[]>([]);
 
   return (
     <>
       <CameraRig phase={phase} ballRef={ballRef} aimXRef={aimXRef} />
-      <AimSystem aimXRef={aimXRef} ballRef={ballRef} aimLineRef={aimLineRef} phase={phase} />
+      <AimSystem aimXRef={aimXRef} ballRef={ballRef} dotRefs={dotRefs} phase={phase} />
 
       {recording && (
         <BowlingReplayDriver
@@ -208,11 +212,21 @@ function SceneContents({
         <meshStandardMaterial color="#222222" />
       </mesh>
 
-      {/* Aim line — managed by AimSystem */}
-      <mesh ref={aimLineRef} visible={false}>
-        <boxGeometry args={[0.022, 0.001, 17]} />
-        <meshBasicMaterial color="#ffffff" opacity={0.45} transparent />
-      </mesh>
+      {/* Trajectory dots — populated by AimSystem via dotRefs */}
+      {Array.from({ length: DOT_COUNT }, (_, i) => {
+        const opacity = 0.85 - i * 0.1;
+        const size = 0.024 - i * 0.002;
+        return (
+          <mesh
+            key={i}
+            ref={(el) => { dotRefs.current[i] = el!; }}
+            visible={false}
+          >
+            <sphereGeometry args={[size, 8, 8]} />
+            <meshBasicMaterial color="#F0C040" opacity={opacity} transparent />
+          </mesh>
+        );
+      })}
 
       {/* Pins */}
       {PIN_POSITIONS.map(([px, py, pz], i) =>
@@ -228,7 +242,7 @@ function SceneContents({
         ) : null,
       )}
 
-      {/* Ball — position managed by AimSystem (aiming) or BowlingReplayDriver (replay) */}
+      {/* Ball */}
       <mesh ref={ballRef} position={[0, BALL_RADIUS, 0.3]}>
         <sphereGeometry args={[BALL_RADIUS, 16, 16]} />
         <meshStandardMaterial
@@ -240,6 +254,72 @@ function SceneContents({
         />
       </mesh>
     </>
+  );
+}
+
+// ── PowerBar ──────────────────────────────────────────────────────────────────
+// Updates fill via direct DOM mutation — no React state re-renders at 60fps.
+
+function PowerBar({
+  chargeProgressRef,
+  isCharging,
+}: {
+  chargeProgressRef: React.RefObject<number>;
+  isCharging: boolean;
+}) {
+  const fillRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isCharging) {
+      if (fillRef.current) fillRef.current.style.transform = 'scaleY(0)';
+      return;
+    }
+    let raf: number;
+    function tick() {
+      if (fillRef.current) {
+        fillRef.current.style.transform = `scaleY(${chargeProgressRef.current})`;
+      }
+      raf = requestAnimationFrame(tick);
+    }
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [isCharging, chargeProgressRef]);
+
+  return (
+    <div
+      style={{
+        position: 'absolute', right: 16, top: '25%', height: '48%',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+      }}
+    >
+      <span style={{
+        fontSize: 9, fontWeight: 700, letterSpacing: 1,
+        color: isCharging ? '#F0C040' : '#666', transition: 'color 0.15s',
+        writingMode: 'vertical-rl', textOrientation: 'mixed',
+        transform: 'rotate(180deg)',
+      }}>
+        POWER
+      </span>
+      {/* Track */}
+      <div style={{
+        flex: 1, width: 8, background: '#222', borderRadius: 4,
+        border: `1px solid ${isCharging ? '#F0C040' : '#444'}`,
+        transition: 'border-color 0.15s',
+        position: 'relative', overflow: 'hidden',
+        display: 'flex', alignItems: 'flex-end',
+      }}>
+        {/* Fill */}
+        <div
+          ref={fillRef}
+          style={{
+            width: '100%', height: '100%',
+            background: 'linear-gradient(to top, #EF9F27, #F0C040)',
+            transformOrigin: 'bottom', transform: 'scaleY(0)',
+            transition: isCharging ? 'none' : 'transform 0.2s ease-out',
+          }}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -264,14 +344,15 @@ export function BowlingScene({
     [onThrow, pinState],
   );
 
-  const { phase: gesturePhase, aimX } = useThrowInput(
+  const { aimX, isCharging, chargeProgressRef, startCharge, releaseCharge } = useThrowInput(
     containerRef,
     isMyTurn && phase === 'aiming',
     handleThrowFromInput,
   );
 
-  // Sync aimXRef with aimX state (ref read in useFrame, state drives DOM)
   aimXRef.current = aimX;
+
+  const canThrow = isMyTurn && phase === 'aiming';
 
   return (
     <div ref={containerRef} className="w-full h-full relative">
@@ -285,9 +366,42 @@ export function BowlingScene({
         />
       </Canvas>
 
-      {isMyTurn && phase === 'aiming' && (
-        <p className="absolute bottom-8 left-0 right-0 text-center text-white text-sm opacity-50 pointer-events-none select-none tracking-wide">
-          {gesturePhase === 'throwing' ? 'Release to throw!' : 'Swipe up to throw'}
+      {/* Power bar */}
+      {canThrow && (
+        <PowerBar chargeProgressRef={chargeProgressRef} isCharging={isCharging} />
+      )}
+
+      {/* Throw button */}
+      {canThrow && (
+        <button
+          onPointerDown={startCharge}
+          onPointerUp={releaseCharge}
+          onPointerCancel={releaseCharge}
+          style={{
+            position: 'absolute', bottom: 24,
+            left: '50%', transform: 'translateX(-50%)',
+            width: 72, height: 72, borderRadius: '50%',
+            background: isCharging ? '#F0C040' : 'transparent',
+            border: `3px solid ${isCharging ? '#F0C040' : '#aaa'}`,
+            color: isCharging ? '#1C1B16' : '#fff',
+            fontSize: 12, fontWeight: 900, letterSpacing: 1,
+            cursor: 'pointer', touchAction: 'none',
+            transition: 'background 0.1s, border-color 0.1s, color 0.1s',
+            userSelect: 'none',
+          }}
+        >
+          THROW
+        </button>
+      )}
+
+      {/* Aim hint */}
+      {canThrow && !isCharging && (
+        <p style={{
+          position: 'absolute', bottom: 108, left: 0, right: 0,
+          textAlign: 'center', color: 'rgba(255,255,255,0.45)',
+          fontSize: 13, margin: 0, pointerEvents: 'none', userSelect: 'none',
+        }}>
+          Drag to aim
         </p>
       )}
     </div>
