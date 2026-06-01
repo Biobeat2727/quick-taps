@@ -1,0 +1,180 @@
+import RAPIER from '@dimforge/rapier3d-compat';
+import {
+  PIN_POSITIONS,
+  LANE_HALF_WIDTH,
+  BALL_RADIUS,
+  PIN_HALF_HEIGHT,
+  PIN_RADIUS,
+} from '@/lib/bowling/bowling-constants';
+import type { ThrowParams, BowlingRawRecording } from '@/types/bowling';
+
+const MAX_FRAMES = 600; // 10s @ 60 Hz
+const NUM_PINS = 10;
+const PIN_COMPONENTS = 7; // x,y,z, qx,qy,qz,qw
+
+let rapierInited = false;
+
+export async function simulateBowl(params: ThrowParams): Promise<BowlingRawRecording> {
+  if (!rapierInited) {
+    await RAPIER.init();
+    rapierInited = true;
+  }
+
+  const { direction, power, spin, pinState } = params;
+  const speed = 2 + power * 6;
+
+  const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
+
+  // ── Static geometry ──────────────────────────────────────────────────────
+
+  // Lane floor
+  {
+    const b = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -0.01, 9.0));
+    world.createCollider(
+      RAPIER.ColliderDesc.cuboid(LANE_HALF_WIDTH, 0.01, 9.5).setFriction(0.12).setRestitution(0.3),
+      b,
+    );
+  }
+
+  // Gutter floors
+  for (const sx of [-1, 1] as const) {
+    const b = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(sx * 0.655, -0.01, 9.0));
+    world.createCollider(
+      RAPIER.ColliderDesc.cuboid(0.125, 0.01, 9.5).setFriction(0.12).setRestitution(0.3),
+      b,
+    );
+  }
+
+  // Gutter inner walls
+  for (const sx of [-1, 1] as const) {
+    const b = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(sx * LANE_HALF_WIDTH, 0.09, 9.0));
+    world.createCollider(
+      RAPIER.ColliderDesc.cuboid(0.01, 0.1, 9.5).setFriction(0.1).setRestitution(0.2),
+      b,
+    );
+  }
+
+  // Outer walls
+  for (const sx of [-1, 1] as const) {
+    const b = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(sx * 0.78, 0.1, 9.0));
+    world.createCollider(
+      RAPIER.ColliderDesc.cuboid(0.01, 0.2, 9.5).setFriction(0.1).setRestitution(0.2),
+      b,
+    );
+  }
+
+  // Pin backstop
+  {
+    const b = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, 0.25, 19.5));
+    world.createCollider(
+      RAPIER.ColliderDesc.cuboid(0.6, 0.5, 0.01).setFriction(0.3).setRestitution(0.2),
+      b,
+    );
+  }
+
+  // ── Dynamic pins ─────────────────────────────────────────────────────────
+
+  const pinHandles: number[] = [];
+  for (let i = 0; i < NUM_PINS; i++) {
+    if (!pinState[i]) {
+      pinHandles.push(-1);
+      continue;
+    }
+    const [px, py, pz] = PIN_POSITIONS[i];
+    const b = world.createRigidBody(
+      RAPIER.RigidBodyDesc.dynamic().setTranslation(px, py, pz),
+    );
+    world.createCollider(
+      RAPIER.ColliderDesc.cylinder(PIN_HALF_HEIGHT, PIN_RADIUS)
+        .setFriction(0.3)
+        .setRestitution(0.4)
+        .setDensity(1.5),
+      b,
+    );
+    pinHandles.push(b.handle);
+  }
+
+  // ── Dynamic ball ─────────────────────────────────────────────────────────
+
+  const startX = Math.max(-0.45, Math.min(0.45, Math.sin(direction) * 0.5));
+  const ballBody = world.createRigidBody(
+    RAPIER.RigidBodyDesc.dynamic().setTranslation(startX, BALL_RADIUS, 0.3),
+  );
+  world.createCollider(
+    RAPIER.ColliderDesc.ball(BALL_RADIUS)
+      .setFriction(0.2)
+      .setRestitution(0.35)
+      .setDensity(3.0),
+    ballBody,
+  );
+
+  // Launch
+  ballBody.setLinvel({ x: Math.sin(direction) * speed, y: 0, z: Math.cos(direction) * speed }, true);
+  ballBody.setAngvel({ x: 0, y: spin * 15, z: 0 }, true);
+
+  // ── Record + simulate ─────────────────────────────────────────────────────
+
+  const ballFramesList: Float32Array[] = [];
+  const pinFramesList: Float32Array[] = [];
+
+  for (let frame = 0; frame < MAX_FRAMES; frame++) {
+    world.step();
+
+    const bp = ballBody.translation();
+    const ballF = new Float32Array(3);
+    ballF[0] = bp.x; ballF[1] = bp.y; ballF[2] = bp.z;
+    ballFramesList.push(ballF);
+
+    const pinF = new Float32Array(NUM_PINS * PIN_COMPONENTS);
+    for (let i = 0; i < NUM_PINS; i++) {
+      const base = i * PIN_COMPONENTS;
+      if (pinHandles[i] === -1) {
+        // Knocked before this throw — store original position, flat on floor
+        const [px, , pz] = PIN_POSITIONS[i];
+        pinF[base]     = px;
+        pinF[base + 1] = -0.191; // below floor
+        pinF[base + 2] = pz;
+        pinF[base + 3] = 0; pinF[base + 4] = 0; pinF[base + 5] = 0; pinF[base + 6] = 1;
+      } else {
+        const pb = world.getRigidBody(pinHandles[i]);
+        const pp = pb.translation();
+        const pq = pb.rotation();
+        pinF[base]     = pp.x;
+        pinF[base + 1] = pp.y;
+        pinF[base + 2] = pp.z;
+        pinF[base + 3] = pq.x;
+        pinF[base + 4] = pq.y;
+        pinF[base + 5] = pq.z;
+        pinF[base + 6] = pq.w;
+      }
+    }
+    pinFramesList.push(pinF);
+
+    // Early stop: all bodies sleeping after at least 30 frames
+    if (frame > 30 && world.bodies.getAll().every(b => b.isSleeping())) break;
+  }
+
+  // ── knockedPins ───────────────────────────────────────────────────────────
+
+  const knockedPins: boolean[] = pinState.map((standing, i) => {
+    if (!standing) return false; // already knocked before this throw
+    if (pinHandles[i] === -1) return false;
+    const pb = world.getRigidBody(pinHandles[i]);
+    return pb.translation().y < 0.08;
+  });
+
+  // ── Pack to base64 ────────────────────────────────────────────────────────
+
+  const numFrames = ballFramesList.length;
+
+  const flatBall = new Float32Array(numFrames * 3);
+  for (let f = 0; f < numFrames; f++) flatBall.set(ballFramesList[f], f * 3);
+
+  const flatPins = new Float32Array(numFrames * NUM_PINS * PIN_COMPONENTS);
+  for (let f = 0; f < numFrames; f++) flatPins.set(pinFramesList[f], f * NUM_PINS * PIN_COMPONENTS);
+
+  const ballFramesBase64 = Buffer.from(flatBall.buffer).toString('base64');
+  const pinFramesBase64 = Buffer.from(flatPins.buffer).toString('base64');
+
+  return { numFrames, ballFramesBase64, pinFramesBase64, knockedPins };
+}

@@ -20,7 +20,12 @@
       "Bash(git add CLAUDE.md)",
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d[''version'']\\)\")",
       "Bash(node -e \"const p=require\\(''./node_modules/@dimforge/rapier3d-compat/package.json''\\); console.log\\(p.version, p.main, p.exports ? ''has-exports'' : ''no-exports''\\)\")",
-      "Bash(node -e \":*)"
+      "Bash(node -e \":*)",
+      "Bash(git -C /c/Users/davey diff --name-only -- quick-taps/)",
+      "Bash(git -C /c/Users/davey diff --cached --name-only -- quick-taps/)",
+      "Bash(git -C /c/Users/davey status --short -- quick-taps/)",
+      "Bash(git -C /c/Users/davey status --short -- \"quick-taps/src/\")",
+      "Bash(git -C /c/Users/davey log --oneline -3 -- \"quick-taps/src/components/game/marble-race/MarbleRaceScene.tsx\")"
     ]
   }
 }
