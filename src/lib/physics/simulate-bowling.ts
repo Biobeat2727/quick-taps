@@ -3,8 +3,6 @@ import {
   PIN_POSITIONS,
   LANE_HALF_WIDTH,
   BALL_RADIUS,
-  PIN_HALF_HEIGHT,
-  PIN_RADIUS,
 } from '@/lib/bowling/bowling-constants';
 import type { ThrowParams, BowlingRawRecording } from '@/types/bowling';
 
@@ -91,13 +89,28 @@ export async function simulateBowl(params: ThrowParams): Promise<BowlingRawRecor
     }
     const [px, py, pz] = PIN_POSITIONS[i];
     const b = world.createRigidBody(
-      RAPIER.RigidBodyDesc.dynamic().setTranslation(px, py, pz),
+      RAPIER.RigidBodyDesc.dynamic()
+        .setTranslation(px, py, pz)
+        .setAngularDamping(1.0)
+        .setLinearDamping(0.2),
     );
+    // Belly — wide, dense lower section; naturally sets CoM low like a real pin
+    // and provides rounded capsule ends for smooth rolling/deflection.
     world.createCollider(
-      RAPIER.ColliderDesc.cylinder(PIN_HALF_HEIGHT, PIN_RADIUS)
-        .setFriction(0.3)
-        .setRestitution(0.4)
-        .setDensity(1.5),
+      RAPIER.ColliderDesc.capsule(0.110, 0.052)
+        .setTranslation(0, -0.020, 0)
+        .setFriction(0.20)
+        .setRestitution(0.50)
+        .setDensity(2.0),
+      b,
+    );
+    // Neck + crown — narrow, light upper section
+    world.createCollider(
+      RAPIER.ColliderDesc.capsule(0.018, 0.022)
+        .setTranslation(0, 0.155, 0)
+        .setFriction(0.20)
+        .setRestitution(0.50)
+        .setDensity(0.5),
       b,
     );
     pinHandles.push(b.handle);

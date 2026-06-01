@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useMemo } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { PIN_POSITIONS, BALL_RADIUS } from '@/lib/bowling/bowling-constants';
+import { PIN_POSITIONS, BALL_RADIUS, PIN_PROFILE } from '@/lib/bowling/bowling-constants';
 import type { ThrowParams, BowlingDecodedRecording } from '@/types/bowling';
 import type { BowlingPhase } from './bowling-shared';
 import { useThrowInput } from './useThrowInput';
@@ -201,6 +201,12 @@ function SceneContents({
   const ballRef = useRef<THREE.Mesh>(null!);
   const dotRefs = useRef<THREE.Mesh[]>([]);
 
+  const pinGeometry = useMemo(() => {
+    const points = PIN_PROFILE.map(([r, y]) => new THREE.Vector2(r, y));
+    return new THREE.LatheGeometry(points, 16);
+  }, []);
+  useEffect(() => () => pinGeometry.dispose(), [pinGeometry]);
+
   return (
     <>
       <CameraRig phase={phase} ballRef={ballRef} aimXRef={aimXRef} />
@@ -263,9 +269,9 @@ function SceneContents({
             key={i}
             ref={(el) => { pinRefs.current[i] = el; }}
             position={[px, py, pz]}
+            geometry={pinGeometry}
           >
-            <cylinderGeometry args={[0.06, 0.06, 0.38, 12]} />
-            <meshStandardMaterial color="white" />
+            <meshStandardMaterial color="white" roughness={0.15} metalness={0.0} />
           </mesh>
         ) : null,
       )}
