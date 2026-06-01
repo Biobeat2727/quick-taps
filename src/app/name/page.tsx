@@ -20,7 +20,7 @@ export default function NamePage() {
   }
 
   return (
-    <main className="flex min-h-dvh flex-col items-center justify-center gap-6 px-6 bg-gray-950 text-white">
+    <main className="flex h-full flex-col items-center justify-center gap-6 px-6 bg-gray-950 text-white">
       <div className="text-center">
         <h1 className="text-4xl font-bold text-amber-400">Quick Taps</h1>
         <p className="mt-2 text-gray-400">Bar games, always on.</p>

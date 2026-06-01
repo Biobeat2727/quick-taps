@@ -143,7 +143,7 @@ export default function HomePage() {
   if (!playerName) return null;
 
   return (
-    <main className="flex min-h-dvh flex-col bg-gray-950 text-white">
+    <main className="flex h-full flex-col bg-gray-950 text-white">
       {/* Header */}
       <header className="flex items-center justify-between px-4 py-4 border-b border-gray-800/60">
         <h1 className="text-lg font-bold text-amber-400">Quick Taps</h1>

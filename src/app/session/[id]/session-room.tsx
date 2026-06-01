@@ -168,7 +168,7 @@ export default function SessionRoom({ sessionId }: { sessionId: string }) {
 
   if (!session || !playerInfo) {
     return (
-      <main className="flex min-h-dvh items-center justify-center bg-gray-950">
+      <main className="flex h-full items-center justify-center bg-gray-950">
         <span className="text-amber-400 animate-pulse">Loading…</span>
       </main>
     );
@@ -180,7 +180,7 @@ export default function SessionRoom({ sessionId }: { sessionId: string }) {
     .map((p) => p.color);
 
   return (
-    <main className="flex min-h-dvh flex-col bg-gray-950 text-white">
+    <main className="flex h-full flex-col bg-gray-950 text-white">
       {/* Header */}
       <header className="flex items-center justify-between px-4 py-4 border-b border-gray-800/60">
         <button
