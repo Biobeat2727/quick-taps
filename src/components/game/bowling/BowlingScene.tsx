@@ -20,17 +20,19 @@ export interface BowlingSceneProps {
 
 // ── BowlingReplayDriver ────────────────────────────────────────────────────────
 
-const REPLAY_HOLD_SECS = 2.0; // seconds to hold on final frame before signalling complete
+const REPLAY_HOLD_SECS = 0.5; // seconds to hold on final frame before signalling complete
 
 function BowlingReplayDriver({
   recording,
   ballRef,
   pinRefs,
+  holdRef,
   onReplayComplete,
 }: {
   recording:        BowlingDecodedRecording;
   ballRef:          React.RefObject<THREE.Mesh>;
   pinRefs:          React.RefObject<(THREE.Mesh | null)[]>;
+  holdRef:          React.RefObject<boolean>;
   onReplayComplete: (knockedPins: boolean[]) => void;
 }) {
   const elapsed      = useRef(0);
@@ -70,6 +72,7 @@ function BowlingReplayDriver({
     if (f >= recording.numFrames - 1) {
       if (holdStart.current === null) {
         holdStart.current = elapsed.current;
+        holdRef.current = true; // signal camera to start easing back
       } else if (elapsed.current - holdStart.current >= REPLAY_HOLD_SECS) {
         done.current = true;
         onReplayComplete(recording.knockedPins);
@@ -141,10 +144,12 @@ function CameraRig({
   phase,
   ballRef,
   aimXRef,
+  holdRef,
 }: {
   phase:   BowlingPhase;
   ballRef: React.RefObject<THREE.Mesh>;
   aimXRef: React.RefObject<number>;
+  holdRef: React.RefObject<boolean>;
 }) {
   const { camera } = useThree();
   const camTarget    = useRef(new THREE.Vector3(0, 1.0, -2));
@@ -170,10 +175,14 @@ function CameraRig({
           camTarget.current.set(bx * 0.3, 1.2, bz - 2.5);
           lookTarget.current.set(bx * 0.5, 0.3, bz + 3.0);
         }
+      } else if (holdRef.current) {
+        // Recording done — ease camera back toward the lane start while result is visible
+        camTarget.current.set(0, 1.0, -2);
+        lookTarget.current.set(0, 0.3, 18);
       }
-      // cameraLocked → targets frozen; camera lerps to that fixed position and stays
+      // cameraLocked and not in hold → targets frozen; camera lerps to pin deck and stays
     }
-    camera.position.lerp(camTarget.current, 0.06);
+    camera.position.lerp(camTarget.current, 0.05);
     camera.lookAt(lookTarget.current);
   });
 
@@ -200,6 +209,8 @@ function SceneContents({
   const pinRefs = useRef<(THREE.Mesh | null)[]>(Array(10).fill(null));
   const ballRef = useRef<THREE.Mesh>(null!);
   const dotRefs = useRef<THREE.Mesh[]>([]);
+  const holdRef = useRef(false);
+  useEffect(() => { holdRef.current = false; }, [recording]);
 
   const pinGeometry = useMemo(() => {
     const points = PIN_PROFILE.map(([r, y]) => new THREE.Vector2(r, y));
@@ -209,7 +220,7 @@ function SceneContents({
 
   return (
     <>
-      <CameraRig phase={phase} ballRef={ballRef} aimXRef={aimXRef} />
+      <CameraRig phase={phase} ballRef={ballRef} aimXRef={aimXRef} holdRef={holdRef} />
       <AimSystem aimXRef={aimXRef} spinRef={spinRef} ballRef={ballRef} dotRefs={dotRefs} phase={phase} />
 
       {recording && (
@@ -217,6 +228,7 @@ function SceneContents({
           recording={recording}
           ballRef={ballRef}
           pinRefs={pinRefs}
+          holdRef={holdRef}
           onReplayComplete={onReplayComplete}
         />
       )}

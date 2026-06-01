@@ -69,7 +69,7 @@ export default function BowlTestPage() {
         setGameState(newState);
         setRecording(null);
         setPhase(gameOver ? 'results' : 'aiming');
-      }, 2500);
+      }, 1200);
     } else {
       setGameState(newState);
       setRecording(null);
