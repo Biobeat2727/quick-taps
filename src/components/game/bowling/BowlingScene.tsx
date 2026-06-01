@@ -7,6 +7,7 @@ import { PIN_POSITIONS, BALL_RADIUS, PIN_PROFILE } from '@/lib/bowling/bowling-c
 import type { ThrowParams, BowlingDecodedRecording } from '@/types/bowling';
 import type { BowlingPhase } from './bowling-shared';
 import { useThrowInput } from './useThrowInput';
+import { NeonSign } from './NeonSign';
 
 export interface BowlingSceneProps {
   myPlayerId:       string;
@@ -486,6 +487,19 @@ export function BowlingScene({
           spinRef={spinRef}
         />
       </Canvas>
+
+      {/* Neon sign — floats above the pin deck */}
+      <div style={{
+        position: 'absolute',
+        top: '14%',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        width: 'min(58vw, 400px)',
+        pointerEvents: 'none',
+        userSelect: 'none',
+      }}>
+        <NeonSign />
+      </div>
 
       {/* Oscillating power bar */}
       {canThrow && <PowerBar powerRef={powerRef} enabled={canThrow} />}
