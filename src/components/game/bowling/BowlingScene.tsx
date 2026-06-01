@@ -20,6 +20,8 @@ export interface BowlingSceneProps {
 
 // ── BowlingReplayDriver ────────────────────────────────────────────────────────
 
+const REPLAY_HOLD_SECS = 2.0; // seconds to hold on final frame before signalling complete
+
 function BowlingReplayDriver({
   recording,
   ballRef,
@@ -31,38 +33,47 @@ function BowlingReplayDriver({
   pinRefs:          React.RefObject<(THREE.Mesh | null)[]>;
   onReplayComplete: (knockedPins: boolean[]) => void;
 }) {
-  const elapsed   = useRef(0);
-  const lastFrame = useRef(-1);
-  const done      = useRef(false);
+  const elapsed      = useRef(0);
+  const lastFrame    = useRef(-1);
+  const done         = useRef(false);
+  const holdStart    = useRef<number | null>(null);
 
   useEffect(() => {
     elapsed.current   = 0;
     lastFrame.current = -1;
     done.current      = false;
+    holdStart.current = null;
   }, [recording]);
 
   useFrame((_, delta) => {
     if (done.current) return;
     elapsed.current += delta;
     const f = Math.min(Math.floor(elapsed.current * 60), recording.numFrames - 1);
-    if (f <= lastFrame.current) return;
-    lastFrame.current = f;
 
-    const bf = recording.ballFrames;
-    if (ballRef.current) ballRef.current.position.set(bf[f * 3], bf[f * 3 + 1], bf[f * 3 + 2]);
+    if (f > lastFrame.current) {
+      lastFrame.current = f;
 
-    const pf = recording.pinFrames;
-    for (let i = 0; i < 10; i++) {
-      const pin = pinRefs.current?.[i];
-      if (!pin) continue;
-      const o = f * 70 + i * 7;
-      pin.position.set(pf[o], pf[o + 1], pf[o + 2]);
-      pin.quaternion.set(pf[o + 3], pf[o + 4], pf[o + 5], pf[o + 6]);
+      const bf = recording.ballFrames;
+      if (ballRef.current) ballRef.current.position.set(bf[f * 3], bf[f * 3 + 1], bf[f * 3 + 2]);
+
+      const pf = recording.pinFrames;
+      for (let i = 0; i < 10; i++) {
+        const pin = pinRefs.current?.[i];
+        if (!pin) continue;
+        const o = f * 70 + i * 7;
+        pin.position.set(pf[o], pf[o + 1], pf[o + 2]);
+        pin.quaternion.set(pf[o + 3], pf[o + 4], pf[o + 5], pf[o + 6]);
+      }
     }
 
-    if (f >= recording.numFrames - 1 && !done.current) {
-      done.current = true;
-      onReplayComplete(recording.knockedPins);
+    // Once the recording ends, hold for REPLAY_HOLD_SECS so the player can see the result
+    if (f >= recording.numFrames - 1) {
+      if (holdStart.current === null) {
+        holdStart.current = elapsed.current;
+      } else if (elapsed.current - holdStart.current >= REPLAY_HOLD_SECS) {
+        done.current = true;
+        onReplayComplete(recording.knockedPins);
+      }
     }
   });
 
@@ -123,6 +134,9 @@ function AimSystem({
 
 // ── CameraRig ─────────────────────────────────────────────────────────────────
 
+// When the ball passes this Z the camera locks to a fixed "pin action" view
+const CAMERA_LOCK_Z = 15.0;
+
 function CameraRig({
   phase,
   ballRef,
@@ -133,19 +147,31 @@ function CameraRig({
   aimXRef: React.RefObject<number>;
 }) {
   const { camera } = useThree();
-  const camTarget  = useRef(new THREE.Vector3(0, 1.0, -2));
-  const lookTarget = useRef(new THREE.Vector3(0, 0.3, 18));
+  const camTarget    = useRef(new THREE.Vector3(0, 1.0, -2));
+  const lookTarget   = useRef(new THREE.Vector3(0, 0.3, 18));
+  const cameraLocked = useRef(false);
 
   useFrame(() => {
     if (phase === 'aiming') {
+      cameraLocked.current = false;
       const ballX = (aimXRef.current ?? 0) * 0.45;
       camTarget.current.set(ballX * 0.4, 1.0, -2);
       lookTarget.current.set(ballX * 0.15, 0.3, 18);
     } else if (phase === 'replay') {
-      const bx = ballRef.current?.position.x ?? 0;
-      const bz = ballRef.current?.position.z ?? 0.3;
-      camTarget.current.set(bx * 0.3, 1.2, bz - 2.5);
-      lookTarget.current.set(bx * 0.5, 0.3, bz + 3.0);
+      if (!cameraLocked.current) {
+        const bx = ballRef.current?.position.x ?? 0;
+        const bz = ballRef.current?.position.z ?? 0.3;
+        if (bz >= CAMERA_LOCK_Z) {
+          // Lock to a wide shot of the pin deck — camera stops following the ball
+          cameraLocked.current = true;
+          camTarget.current.set(0, 1.3, 12.5);
+          lookTarget.current.set(0, 0.25, 18.2);
+        } else {
+          camTarget.current.set(bx * 0.3, 1.2, bz - 2.5);
+          lookTarget.current.set(bx * 0.5, 0.3, bz + 3.0);
+        }
+      }
+      // cameraLocked → targets frozen; camera lerps to that fixed position and stays
     }
     camera.position.lerp(camTarget.current, 0.06);
     camera.lookAt(lookTarget.current);
@@ -192,20 +218,26 @@ function SceneContents({
       <ambientLight intensity={0.6} />
       <directionalLight position={[5, 10, 5]} intensity={1.2} />
 
-      {/* Lane */}
-      <mesh position={[0, 0, 9.0]}>
-        <boxGeometry args={[1.06, 0.01, 18.5]} />
+      {/* Lane — extended to the backstop at z=19.1 */}
+      <mesh position={[0, 0, 9.55]}>
+        <boxGeometry args={[1.06, 0.01, 19.1]} />
         <meshStandardMaterial color="#C8A96E" />
       </mesh>
 
       {/* Gutters */}
-      <mesh position={[-0.655, -0.005, 9.0]}>
-        <boxGeometry args={[0.25, 0.01, 18.5]} />
+      <mesh position={[-0.655, -0.005, 9.55]}>
+        <boxGeometry args={[0.25, 0.01, 19.1]} />
         <meshStandardMaterial color="#8B6F4E" />
       </mesh>
-      <mesh position={[0.655, -0.005, 9.0]}>
-        <boxGeometry args={[0.25, 0.01, 18.5]} />
+      <mesh position={[0.655, -0.005, 9.55]}>
+        <boxGeometry args={[0.25, 0.01, 19.1]} />
         <meshStandardMaterial color="#8B6F4E" />
+      </mesh>
+
+      {/* Backstop wall */}
+      <mesh position={[0, 0.25, 19.1]}>
+        <boxGeometry args={[1.56, 0.5, 0.05]} />
+        <meshStandardMaterial color="#8B6F4E" roughness={0.8} />
       </mesh>
 
       {/* Foul line */}

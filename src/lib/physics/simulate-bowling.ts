@@ -27,47 +27,47 @@ export async function simulateBowl(params: ThrowParams): Promise<BowlingRawRecor
 
   // ── Static geometry ──────────────────────────────────────────────────────
 
-  // Lane floor
+  // Lane floor — extends to backstop at z=19.1
   {
-    const b = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -0.01, 9.0));
+    const b = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -0.01, 9.55));
     world.createCollider(
-      RAPIER.ColliderDesc.cuboid(LANE_HALF_WIDTH, 0.01, 9.5).setFriction(0.12).setRestitution(0.3),
+      RAPIER.ColliderDesc.cuboid(LANE_HALF_WIDTH, 0.01, 10.05).setFriction(0.12).setRestitution(0.3),
       b,
     );
   }
 
   // Gutter floors
   for (const sx of [-1, 1] as const) {
-    const b = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(sx * 0.655, -0.01, 9.0));
+    const b = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(sx * 0.655, -0.01, 9.55));
     world.createCollider(
-      RAPIER.ColliderDesc.cuboid(0.125, 0.01, 9.5).setFriction(0.12).setRestitution(0.3),
+      RAPIER.ColliderDesc.cuboid(0.125, 0.01, 10.05).setFriction(0.12).setRestitution(0.3),
       b,
     );
   }
 
   // Gutter inner walls
   for (const sx of [-1, 1] as const) {
-    const b = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(sx * LANE_HALF_WIDTH, 0.09, 9.0));
+    const b = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(sx * LANE_HALF_WIDTH, 0.09, 9.55));
     world.createCollider(
-      RAPIER.ColliderDesc.cuboid(0.01, 0.1, 9.5).setFriction(0.1).setRestitution(0.2),
+      RAPIER.ColliderDesc.cuboid(0.01, 0.1, 10.05).setFriction(0.1).setRestitution(0.2),
       b,
     );
   }
 
   // Outer walls
   for (const sx of [-1, 1] as const) {
-    const b = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(sx * 0.78, 0.1, 9.0));
+    const b = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(sx * 0.78, 0.1, 9.55));
     world.createCollider(
-      RAPIER.ColliderDesc.cuboid(0.01, 0.2, 9.5).setFriction(0.1).setRestitution(0.2),
+      RAPIER.ColliderDesc.cuboid(0.01, 0.2, 10.05).setFriction(0.1).setRestitution(0.2),
       b,
     );
   }
 
-  // Pin backstop
+  // Pin backstop — z=19.1 gives ~0.8m behind last pin row, like a real kickback
   {
-    const b = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, 0.25, 19.5));
+    const b = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, 0.25, 19.1));
     world.createCollider(
-      RAPIER.ColliderDesc.cuboid(0.6, 0.5, 0.01).setFriction(0.3).setRestitution(0.2),
+      RAPIER.ColliderDesc.cuboid(LANE_HALF_WIDTH + 0.25, 0.5, 0.01).setFriction(0.3).setRestitution(0.2),
       b,
     );
   }
