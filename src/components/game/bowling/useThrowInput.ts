@@ -1,37 +1,33 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import type { ThrowParams } from '@/types/bowling';
 
-const CHARGE_DURATION = 1500; // ms to reach full power
+const POWER_HALF_PERIOD = 1800; // ms per direction (0→1, then 1→0)
+const SPIN_RAMP_RATE    = 1.5;  // spin units/sec while button held (reaches ±1 in ~0.67s)
 
 export function useThrowInput(
   containerRef: React.RefObject<HTMLElement | null>,
   enabled: boolean,
   onThrow: (params: ThrowParams) => void,
 ): {
-  aimX: number;
-  isCharging: boolean;
-  chargeProgressRef: React.RefObject<number>;
-  startCharge: () => void;
-  releaseCharge: () => void;
+  aimXRef:    React.RefObject<number>;
+  powerRef:   React.RefObject<number>;
+  spinRef:    React.RefObject<number>;
+  setSpinDir: (dir: -1 | 0 | 1) => void;
+  doThrow:    () => void;
 } {
-  const [aimX, setAimX] = useState(0);
-  const [isCharging, setIsCharging] = useState(false);
-
-  const aimXRef = useRef(0);
-  const chargeProgressRef = useRef(0);
-  const chargeStartRef = useRef(0);
-  const chargeRafRef = useRef(0);
-  const isChargingRef = useRef(false);
+  const aimXRef    = useRef(0);
+  const spinRef    = useRef(0);
+  const spinDirRef = useRef<-1 | 0 | 1>(0);
+  const powerRef   = useRef(0);
   const onThrowRef = useRef(onThrow);
   onThrowRef.current = onThrow;
 
-  // ── Aim tracking ────────────────────────────────────────────────────────────
+  // ── Horizontal drag → lane position ────────────────────────────────────────
 
   useEffect(() => {
     if (!enabled) {
-      setAimX(0);
       aimXRef.current = 0;
       return;
     }
@@ -40,70 +36,68 @@ export function useThrowInput(
 
     function onTouchMove(e: TouchEvent) {
       const touch = e.touches[0];
-      const rect = el!.getBoundingClientRect();
-      const centerX = rect.left + rect.width / 2;
-      const newAimX = Math.max(-1, Math.min(1, (touch.clientX - centerX) / (rect.width / 2)));
-      aimXRef.current = newAimX;
-      setAimX(newAimX);
+      const rect  = el!.getBoundingClientRect();
+      const cx    = rect.left + rect.width / 2;
+      aimXRef.current = Math.max(-1, Math.min(1, (touch.clientX - cx) / (rect.width / 2)));
     }
 
     el.addEventListener('touchmove', onTouchMove, { passive: true });
     return () => el.removeEventListener('touchmove', onTouchMove);
   }, [enabled, containerRef]);
 
-  // ── Charge loop ─────────────────────────────────────────────────────────────
+  // ── Oscillate power + ramp spin while enabled ───────────────────────────────
 
-  const startCharge = useCallback(() => {
-    if (!enabled || isChargingRef.current) return;
-    isChargingRef.current = true;
-    chargeProgressRef.current = 0;
-    chargeStartRef.current = Date.now();
-    setIsCharging(true);
+  useEffect(() => {
+    if (!enabled) {
+      powerRef.current   = 0;
+      spinRef.current    = 0;
+      spinDirRef.current = 0;
+      return;
+    }
 
-    function tick() {
-      chargeProgressRef.current = Math.min(1, (Date.now() - chargeStartRef.current) / CHARGE_DURATION);
-      if (isChargingRef.current) {
-        chargeRafRef.current = requestAnimationFrame(tick);
+    let raf: number;
+    const startTime = performance.now();
+    let lastTime    = startTime;
+
+    function tick(now: number) {
+      const dt = (now - lastTime) / 1000;
+      lastTime = now;
+
+      // Triangle wave: 0 → 1 → 0 → 1 → …
+      const t = (now - startTime) % (POWER_HALF_PERIOD * 2);
+      powerRef.current = t < POWER_HALF_PERIOD
+        ? t / POWER_HALF_PERIOD
+        : 1 - (t - POWER_HALF_PERIOD) / POWER_HALF_PERIOD;
+
+      // Spin ramp while hook button held
+      const dir = spinDirRef.current;
+      if (dir !== 0) {
+        spinRef.current = Math.max(-1, Math.min(1, spinRef.current + dir * SPIN_RAMP_RATE * dt));
       }
+
+      raf = requestAnimationFrame(tick);
     }
-    chargeRafRef.current = requestAnimationFrame(tick);
+
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
   }, [enabled]);
 
-  const releaseCharge = useCallback(() => {
-    if (!isChargingRef.current) return;
-    isChargingRef.current = false;
-    cancelAnimationFrame(chargeRafRef.current);
-    setIsCharging(false);
+  // ── Actions ─────────────────────────────────────────────────────────────────
 
+  const setSpinDir = useCallback((dir: -1 | 0 | 1) => {
+    spinDirRef.current = dir;
+  }, []);
+
+  const doThrow = useCallback(() => {
+    if (!enabled) return;
     onThrowRef.current({
-      startX: aimXRef.current * 0.45,
+      startX:    aimXRef.current * 0.45,
       direction: 0,
-      power: chargeProgressRef.current,
-      spin: 0,
-      pinState: [], // BowlingScene overrides with real pinState
+      power:     powerRef.current,
+      spin:      spinRef.current,
+      pinState:  [],
     });
-
-    chargeProgressRef.current = 0;
-  }, []);
-
-  // ── Cleanup on disable ───────────────────────────────────────────────────────
-
-  useEffect(() => {
-    if (!enabled && isChargingRef.current) {
-      isChargingRef.current = false;
-      cancelAnimationFrame(chargeRafRef.current);
-      chargeProgressRef.current = 0;
-      setIsCharging(false);
-    }
   }, [enabled]);
 
-  // ── Cleanup on unmount ───────────────────────────────────────────────────────
-
-  useEffect(() => {
-    return () => {
-      cancelAnimationFrame(chargeRafRef.current);
-    };
-  }, []);
-
-  return { aimX, isCharging, chargeProgressRef, startCharge, releaseCharge };
+  return { aimXRef, powerRef, spinRef, setSpinDir, doThrow };
 }
