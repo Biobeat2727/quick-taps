@@ -308,17 +308,15 @@ function NeonSignBoard() {
   const matRef = useRef<THREE.MeshBasicMaterial>(null!);
 
   useEffect(() => {
-    const W = 1024, H = 512;
+    const W = 2048, H = 1024;
     const canvas = document.createElement('canvas');
     canvas.width = W;
     canvas.height = H;
     const ctx = canvas.getContext('2d')!;
     let texture: THREE.CanvasTexture | null = null;
 
-    document.fonts.load('700 120px "Dancing Script"').then(() => {
+    document.fonts.load('700 240px "Dancing Script"').then(() => {
       ctx.clearRect(0, 0, W, H);
-      ctx.scale(-1, 1);
-      ctx.translate(-W, 0);
 
       function drawNeon(text: string, cx: number, cy: number, size: number, color: string) {
         ctx.font = `700 ${size}px "Dancing Script"`;
@@ -331,7 +329,7 @@ function NeonSignBoard() {
         ctx.strokeStyle = color;
         ctx.lineWidth = size * 0.18;
         ctx.shadowColor = color;
-        ctx.shadowBlur = 45;
+        ctx.shadowBlur = 90;
         ctx.strokeText(text, cx, cy);
 
         // Dark glass tube rim
@@ -346,14 +344,14 @@ function NeonSignBoard() {
         ctx.strokeStyle = color;
         ctx.lineWidth = size * 0.048;
         ctx.shadowColor = color;
-        ctx.shadowBlur = 16;
+        ctx.shadowBlur = 32;
         ctx.strokeText(text, cx, cy);
 
         // Hot white core
         ctx.globalAlpha = 0.75;
         ctx.strokeStyle = 'white';
         ctx.lineWidth = size * 0.018;
-        ctx.shadowBlur = 6;
+        ctx.shadowBlur = 12;
         ctx.strokeText(text, cx, cy);
 
         // Specular glass highlight (offset up slightly)
@@ -367,8 +365,8 @@ function NeonSignBoard() {
         ctx.shadowBlur = 0;
       }
 
-      drawNeon('Quick Taps', W / 2, 200, 155, '#ff2d78');
-      drawNeon('Bowling',    W / 2, 400, 125, '#00e5ff');
+      drawNeon('Quick Taps', W / 2, 390, 310, '#ff2d78');
+      drawNeon('Bowling',    W / 2, 790, 250, '#00e5ff');
 
       texture = new THREE.CanvasTexture(canvas);
       if (matRef.current) {
@@ -380,13 +378,13 @@ function NeonSignBoard() {
     return () => { texture?.dispose(); };
   }, []);
 
-  // Board: 2 m wide × 1 m tall — matches canvas 2:1 aspect ratio
-  const bW = 2.0, bH = 1.0;
+  // Board: 4 m wide × 2 m tall — matches canvas 2:1 aspect ratio
+  const bW = 4.0, bH = 2.0;
 
   return (
-    // y=1.75 centers the board at 1.75 m — comfortably above the pins (max y≈0.38)
+    // y=2.2 centers the board at 2.2 m — bottom edge at 1.2 m, well above the pins (max y≈0.38)
     // z=19.0 places it just behind the back row of pins (z≈18.3)
-    <group position={[0, 1.75, 19.0]}>
+    <group position={[0, 2.2, 19.0]}>
       {/* Dark backing board */}
       <mesh>
         <boxGeometry args={[bW + 0.1, bH + 0.1, 0.06]} />
