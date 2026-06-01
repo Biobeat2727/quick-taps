@@ -94,8 +94,19 @@ export async function simulateBowl(params: ThrowParams): Promise<BowlingRawRecor
         .setAngularDamping(1.0)
         .setLinearDamping(0.2),
     );
-    // Belly — wide, dense lower section; naturally sets CoM low like a real pin
-    // and provides rounded capsule ends for smooth rolling/deflection.
+    // Flat base — tiny disc that contacts the lane floor, giving the pin stable
+    // standing equilibrium (same role as the real 1" flat base on a bowling pin).
+    // The belly capsule floats 9mm above the floor while standing; once the pin
+    // is knocked over the base becomes irrelevant and the capsule ends drive rolling.
+    world.createCollider(
+      RAPIER.ColliderDesc.cylinder(0.001, 0.025)
+        .setTranslation(0, -0.190, 0)  // bottom at world y=0.000
+        .setFriction(0.25)
+        .setRestitution(0.10)
+        .setDensity(1.0),
+      b,
+    );
+    // Belly — wide, dense capsule; rounded ends let knocked pins roll/slide smoothly.
     world.createCollider(
       RAPIER.ColliderDesc.capsule(0.110, 0.052)
         .setTranslation(0, -0.020, 0)
@@ -104,7 +115,7 @@ export async function simulateBowl(params: ThrowParams): Promise<BowlingRawRecor
         .setDensity(2.0),
       b,
     );
-    // Neck + crown — narrow, light upper section
+    // Neck + crown — narrow, light capsule.
     world.createCollider(
       RAPIER.ColliderDesc.capsule(0.018, 0.022)
         .setTranslation(0, 0.155, 0)
