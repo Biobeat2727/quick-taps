@@ -222,6 +222,35 @@ function SceneContents({
   const holdRef = useRef(false);
   useEffect(() => { holdRef.current = false; }, [recording]);
 
+  // Snap standing pins back to upright after replay finishes moving them around
+  useEffect(() => {
+    if (phase !== 'aiming') return;
+    for (let i = 0; i < 10; i++) {
+      const pin = pinRefs.current[i];
+      if (!pin) continue;
+      const [px, py, pz] = PIN_POSITIONS[i];
+      pin.position.set(px, py, pz);
+      pin.quaternion.set(0, 0, 0, 1);
+    }
+  }, [phase]);
+
+  // Sync pin visibility and pose whenever pinState changes
+  useEffect(() => {
+    for (let i = 0; i < 10; i++) {
+      const pin = pinRefs.current[i];
+      if (pinState[i]) {
+        if (pin) {
+          pin.visible = true;
+          const [px, py, pz] = PIN_POSITIONS[i];
+          pin.position.set(px, py, pz);
+          pin.quaternion.set(0, 0, 0, 1);
+        }
+      } else {
+        if (pin) pin.visible = false;
+      }
+    }
+  }, [pinState]);
+
   const pinGeometry = useMemo(() => {
     const points = PIN_PROFILE.map(([r, y]) => new THREE.Vector2(r, y));
     return new THREE.LatheGeometry(points, 16);
@@ -279,8 +308,8 @@ function SceneContents({
         <meshStandardMaterial color="#3D2B1A" roughness={0.9} />
       </mesh>
 
-      {/* Approach surface — matches lane width, sits behind the foul line */}
-      <mesh position={[0, 0, -1.5]}>
+      {/* Approach surface — sits behind the foul line, lowered to avoid z-fighting with lane */}
+      <mesh position={[0, -0.001, -1.5]}>
         <boxGeometry args={[1.06, 0.01, 3.0]} />
         <meshStandardMaterial color="#C8A96E" roughness={0.8} />
       </mesh>
