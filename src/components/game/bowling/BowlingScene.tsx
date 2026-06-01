@@ -189,15 +189,15 @@ function CameraRig({
   return null;
 }
 
-// Triangle shape for lane rangefinder arrows — tip toward +Z (toward pins) after RX(PI/2)
-const arrowShape = (() => {
-  const s = new THREE.Shape();
-  s.moveTo(0, 0.042);         // tip
-  s.lineTo(-0.022, -0.026);   // base left
-  s.lineTo( 0.022, -0.026);   // base right
-  s.closePath();
-  return s;
-})();
+// X positions shared by approach dots and rangefinder arrows (boards 5,10,15,20,25,30,35)
+const MARKER_XS = [-0.42, -0.28, -0.14, 0, 0.14, 0.28, 0.42] as const;
+
+// Chevron arrow constants — two angled box arms meeting at a tip
+const CHV_HALF  = 0.030;  // half base-width of the V
+const CHV_DEPTH = 0.065;  // distance from tip to base along the lane
+const CHV_LEN   = Math.sqrt(CHV_HALF ** 2 + CHV_DEPTH ** 2); // arm length ≈ 0.072
+const CHV_ANGLE = Math.atan2(CHV_HALF, CHV_DEPTH);            // arm angle ≈ 24.7°
+const CHV_W     = 0.009;  // arm width
 
 // ── SceneContents ─────────────────────────────────────────────────────────────
 
@@ -228,6 +228,23 @@ function SceneContents({
   }, []);
   useEffect(() => () => pinGeometry.dispose(), [pinGeometry]);
 
+  // Board-stripe canvas texture: 39 alternating maple/pine boards across the lane width
+  const laneTexture = useMemo(() => {
+    const W = 512, H = 32;
+    const canvas = document.createElement('canvas');
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext('2d')!;
+    const bw = W / 39;
+    for (let i = 0; i < 39; i++) {
+      ctx.fillStyle = i % 2 === 0 ? '#D4A96A' : '#C49558';
+      ctx.fillRect(Math.floor(i * bw), 0, Math.ceil(bw) + 1, H);
+    }
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }, []);
+  useEffect(() => () => laneTexture.dispose(), [laneTexture]);
+
   return (
     <>
       <CameraRig phase={phase} ballRef={ballRef} aimXRef={aimXRef} holdRef={holdRef} />
@@ -246,20 +263,26 @@ function SceneContents({
       <ambientLight intensity={0.6} />
       <directionalLight position={[5, 10, 5]} intensity={1.2} />
 
-      {/* Lane */}
+      {/* Lane — board-stripe texture (U=width, stripes run down the length) */}
       <mesh position={[0, 0, 9.0]}>
         <boxGeometry args={[1.06, 0.01, 18.5]} />
-        <meshStandardMaterial color="#C8A96E" />
+        <meshStandardMaterial map={laneTexture} roughness={0.3} metalness={0.0} />
       </mesh>
 
       {/* Gutters */}
       <mesh position={[-0.655, -0.005, 9.0]}>
         <boxGeometry args={[0.25, 0.01, 18.5]} />
-        <meshStandardMaterial color="#8B6F4E" />
+        <meshStandardMaterial color="#3D2B1A" roughness={0.9} />
       </mesh>
       <mesh position={[0.655, -0.005, 9.0]}>
         <boxGeometry args={[0.25, 0.01, 18.5]} />
-        <meshStandardMaterial color="#8B6F4E" />
+        <meshStandardMaterial color="#3D2B1A" roughness={0.9} />
+      </mesh>
+
+      {/* Approach surface — matches lane width, sits behind the foul line */}
+      <mesh position={[0, 0, -1.5]}>
+        <boxGeometry args={[1.06, 0.01, 3.0]} />
+        <meshStandardMaterial color="#C8A96E" roughness={0.8} />
       </mesh>
 
       {/* Foul line */}
@@ -268,13 +291,32 @@ function SceneContents({
         <meshStandardMaterial color="#222222" />
       </mesh>
 
-      {/* Lane rangefinder arrows — 7 triangles at ~4.5 ft past foul line */}
-      {([-0.408, -0.272, -0.136, 0, 0.136, 0.272, 0.408] as const).map((x, i) => (
-        <mesh key={i} position={[x, 0.007, 1.5]} rotation={[Math.PI / 2, 0, 0]}>
-          <shapeGeometry args={[arrowShape]} />
-          <meshStandardMaterial color="#5a2d0c" roughness={0.8} side={THREE.DoubleSide} />
+      {/* Approach dots — single row near the foul line */}
+      {MARKER_XS.map((x, j) => (
+        <mesh key={`ad-${j}`} position={[x, 0.006, 0.8]}>
+          <cylinderGeometry args={[0.018, 0.018, 0.002, 16]} />
+          <meshStandardMaterial color="#8B6F4E" roughness={0.7} />
         </mesh>
       ))}
+
+      {/* Rangefinder arrows — chevron formation */}
+      {([-0.42, -0.28, -0.14, 0, 0.14, 0.28, 0.42] as const).map((x, i) => {
+        const zOffset = Math.abs(x) * 0.4; // center arrow furthest forward, outer arrows step back
+        return (
+          <group key={`arrow-${i}`} position={[x, 0.007, 4.6 - zOffset]}>
+            {/* Left arm */}
+            <mesh position={[-0.022, 0, -0.025]} rotation={[0, 0.42, 0]}>
+              <boxGeometry args={[0.008, 0.002, 0.075]} />
+              <meshStandardMaterial color="#6B5040" />
+            </mesh>
+            {/* Right arm */}
+            <mesh position={[0.022, 0, -0.025]} rotation={[0, -0.42, 0]}>
+              <boxGeometry args={[0.008, 0.002, 0.075]} />
+              <meshStandardMaterial color="#6B5040" />
+            </mesh>
+          </group>
+        );
+      })}
 
       {/* Trajectory dots — curved by AimSystem via dotRefs */}
       {Array.from({ length: DOT_COUNT }, (_, i) => {
@@ -305,6 +347,20 @@ function SceneContents({
           </mesh>
         ) : null,
       )}
+
+      {/* Pin spot dots — one per pin position */}
+      {PIN_POSITIONS.map(([px, , pz], i) => (
+        <mesh key={i} position={[px, 0.006, pz]}>
+          <cylinderGeometry args={[0.025, 0.025, 0.002, 16]} />
+          <meshStandardMaterial color="#8B6F4E" roughness={0.7} />
+        </mesh>
+      ))}
+
+      {/* Pin deck — darker backing area behind the pins */}
+      <mesh position={[0, 0, 19.5]}>
+        <boxGeometry args={[1.06, 0.01, 1.0]} />
+        <meshStandardMaterial color="#A8824A" roughness={0.6} />
+      </mesh>
 
       {/* Ball — consistent material throughout aiming and replay */}
       <mesh ref={ballRef} position={[0, BALL_RADIUS, 0.3]}>
