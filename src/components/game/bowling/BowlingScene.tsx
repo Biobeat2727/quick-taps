@@ -125,7 +125,7 @@ function AimSystem({
       const dotZ = 0.3 + (i + 1) * DOT_SPACING;
       const dz   = dotZ - 0.3;
       dot.visible = true;
-      dot.position.set(startX + spin * HOOK_K * dz * dz, DOT_Y, dotZ);
+      dot.position.set(startX - spin * HOOK_K * dz * dz, DOT_Y, dotZ);
     }
   });
 

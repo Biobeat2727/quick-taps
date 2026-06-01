@@ -99,7 +99,7 @@ export async function simulateBowl(params: ThrowParams): Promise<BowlingRawRecor
 - Static gutter inner walls: `cuboid(0.01, 0.1, 9.5)` at `[±0.53, 0.09, 9.0]`
 - Static outer walls: `cuboid(0.01, 0.2, 9.5)` at `[±0.78, 0.1, 9.0]`
 - Static pin backstop: `cuboid(0.6, 0.5, 0.01)` at `[0, 0.25, 19.5]`
-- Dynamic pins: `ColliderDesc.cylinder(0.191, 0.06)` only where `pinState[i]===true`; friction 0.3, restitution 0.4, density 1.5
+- Dynamic pins: 3-collider compound per pin (see **Pin Physics** section below); only spawned where `pinState[i]===true`
 - Dynamic ball: `ColliderDesc.ball(0.108)`; startX = `clamp(sin(direction)*0.5, ±0.45)`; friction 0.2, restitution 0.35, density 3.0
 - **Launch:** `ball.setLinvel({ x: sin(dir)*speed, y:0, z: cos(dir)*speed })` where `speed = 2 + power*6`; `ball.setAngvel({ x:0, y: spin*15, z:0 })`
 
@@ -327,10 +327,98 @@ After Phase 4 is solid, wiring into sessions requires:
 
 ---
 
+---
+
+## Pin Physics — Current Implementation
+
+### Visual model
+Pins use `THREE.LatheGeometry` built from `PIN_PROFILE` in `bowling-constants.ts` — a 15-point curve
+matching USBC regulation proportions (narrow 2.5 cm base, 6.1 cm belly peak at 4.5″ from base,
+2.3 cm neck at 10″, small crown). Profile is pre-built once via `useMemo` in `SceneContents` and
+passed as the `geometry` prop on each pin mesh. Material: `meshStandardMaterial`, white, `roughness=0.15`.
+
+### Physics colliders — 3-collider compound per pin
+
+Each pin rigid body has **three colliders** attached with local-frame translations. The compound
+arrangement is what makes pins stand stably AND roll/deflect realistically once knocked:
+
+```
+Local y (from rigid body origin at world y=0.191):
+
+  +0.191  ─── crown tip ────────────────────────────
+  +0.177  ╔════════════════╗  neck capsule top
+          ║  Neck capsule  ║  halfHeight=0.018, r=0.022
+  +0.133  ║  local y=+0.155║  density=0.5 (light)
+          ╚════════════════╝  neck capsule bottom
+  +0.115
+
+  +0.142  ╔════════════════════════════════╗  belly cap top
+          ║                                ║
+          ║        Belly capsule           ║  halfHeight=0.110, r=0.052
+          ║        local y=−0.020          ║  density=2.0 (heavy → low CoM)
+          ║                                ║
+  +0.009  ╚════════════════════════════════╝  belly hemisphere bottom
+                                              (9mm above floor when standing)
+
+   0.000  ════════════════════════════════════  floor
+
+  +0.001  ╔══╗  flat base top
+          ║  ║  cylinder: halfHeight=0.001, r=0.025
+  +0.000  ╚══╝  flat base bottom  (local y=−0.190)
+```
+
+| Collider | Shape | halfHeight | radius | local y | density | Purpose |
+|---|---|---|---|---|---|---|
+| Flat base | cylinder | 0.001 | 0.025 | −0.190 | 1.0 | Floor contact — provides stable standing |
+| Belly | capsule | 0.110 | 0.052 | −0.020 | 2.0 | Ball collision + CoM placement + rolling when fallen |
+| Neck/crown | capsule | 0.018 | 0.022 | +0.155 | 0.5 | Narrow upper section for realistic chain reactions |
+
+All colliders: `friction=0.20`, `restitution=0.50` except base (`friction=0.25`, `restitution=0.10`).
+
+Rigid body: `angularDamping=1.0`, `linearDamping=0.2`.
+
+### Why this compound, not a single capsule
+
+A capsule with a hemispherical bottom contacts the floor at a **single point** — neutral equilibrium.
+Any floating-point noise in Rapier causes the pin to tip without restoring force. Observed symptom:
+all pins flopping over before the ball arrives.
+
+A flat-bottom cylinder gives **stable equilibrium**: tilting moves the contact point to the edge,
+creating a restoring torque. The flat base disc (2mm tall, 25mm radius) is just large enough to
+anchor the pin without affecting rolling behavior after the pin is knocked.
+
+Once a pin is knocked, the flat base becomes geometrically irrelevant. The belly capsule's
+hemispherical ends take over — they let the pin roll smoothly across the lane and deflect off other
+pins rather than catching on flat cylinder edges (which was the "chalk" problem).
+
+### Why a belly capsule, not a cylinder
+
+The original implementation used a single `cylinder(0.191, 0.06)` for the full pin body. Flat
+circular cylinder ends catch on the floor and on other pins when the pin is falling, creating stiff
+"chalk-stick" collisions. The belly capsule's hemisphere ends allow the fallen pin to:
+- Roll and slide smoothly across the lane
+- Deflect off adjacent standing pins with a glancing contact
+- Spin and scatter realistically rather than stacking flat
+
+### Center of mass
+The heavy belly (density 2.0) offset slightly below center vs. the light neck (density 0.5) puts
+the computed CoM at approximately **y=0.173m** — close to the real pin CoM of ~0.178m (7″ from
+base). Pins need appropriate force to topple; a light brush won't knock them; a solid hit sends
+them skittering realistically.
+
+### Knockdown detection
+```ts
+pin.translation().y < 0.08   // center dropped from ~0.173 to below 8 cm → pin is down
+```
+
+---
+
 ## Key Pitfalls (all phases)
 
 - `PIN_POSITIONS` **must** live in `bowling-constants.ts` (no `'use client'` directive) — the server sim imports it
-- Rapier `ColliderDesc.cylinder(halfHeight, radius)` aligns on **Y axis** by default — correct for standing pins
+- Rapier capsule/cylinder colliders both align on **Y axis** by default — correct for standing pins
+- **Do NOT use a single capsule for the full pin body** — hemispherical bottom → single-point floor contact → neutral equilibrium → pins fall before ball arrives. Always use the flat base disc (see Pin Physics section).
+- Pin compound collider local translations are relative to the rigid body origin at `y=0.191`. The flat base `setTranslation(0, -0.190, 0)` places its bottom exactly at world `y=0.000`.
 - Use inline Rapier init (`let rapierInited = false`) same as `simulate-race.ts` — do NOT share the singleton across files in Phase 1
 - `<Canvas>` — do NOT add `orthographic` prop — bowling uses perspective projection
 - Touch listeners need `{ passive: false }` + `e.preventDefault()` to suppress scroll during throw gesture
