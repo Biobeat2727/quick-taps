@@ -2,15 +2,41 @@
 
 import { useState, useRef } from 'react';
 import { BowlingScene } from '@/components/game/bowling/BowlingScene';
-import { decodeRecording } from '@/components/game/bowling/bowling-shared';
-import type { BowlingPhase } from '@/components/game/bowling/bowling-shared';
+import {
+  decodeRecording,
+  computeFrameScores,
+  nextTurn,
+  isGameComplete,
+  ScoreCard,
+  BowlingResultsScreen,
+  type BowlingPhase,
+  type BowlingGameState,
+} from '@/components/game/bowling/bowling-shared';
 import type { ThrowParams, BowlingDecodedRecording } from '@/types/bowling';
 
+const PLAYER_ID = 'test-player';
+const PLAYER_IDS = [PLAYER_ID];
+
+function initialState(): BowlingGameState {
+  return {
+    currentFrame: 0,
+    currentThrow: 1,
+    activePlayerId: PLAYER_ID,
+    pinState: Array(10).fill(true),
+    throwHistory: { [PLAYER_ID]: Array.from({ length: 10 }, () => [] as number[]) },
+  };
+}
+
 export default function BowlTestPage() {
-  const [pinState, setPinState] = useState<boolean[]>(Array(10).fill(true));
+  const [gameState, setGameState] = useState<BowlingGameState>(initialState);
   const [recording, setRecording] = useState<BowlingDecodedRecording | null>(null);
   const [phase, setPhase] = useState<BowlingPhase>('aiming');
-  const throwCount = useRef(0);
+  // Keep a stable ref to gameState for use inside the timeout callback
+  const gameStateRef = useRef(gameState);
+  gameStateRef.current = gameState;
+
+  const frames = gameState.throwHistory[PLAYER_ID] ?? [];
+  const cumScores = computeFrameScores(frames.flat());
 
   async function handleThrow(params: ThrowParams) {
     setPhase('replay');
@@ -24,36 +50,74 @@ export default function BowlTestPage() {
   }
 
   function handleReplayComplete(knockedPins: boolean[]) {
-    throwCount.current++;
-    const newPins = pinState.map((standing, i) => standing && !knockedPins[i]);
-    const isStrike = knockedPins.every(Boolean) && throwCount.current === 1;
+    const current = gameStateRef.current;
+    const newState = nextTurn(current, knockedPins, PLAYER_IDS);
+    const gameOver = isGameComplete(newState, PLAYER_IDS);
+    const frameAdvanced = newState.currentFrame > current.currentFrame;
 
-    if (isStrike || throwCount.current >= 2) {
-      // Reset after brief pause to show result
+    // Delay before UI reset when: frame complete, game over, or 10th-frame mid-frame pin reset
+    const within10thReset =
+      !gameOver &&
+      !frameAdvanced &&
+      current.currentFrame === 9 &&
+      newState.pinState.every(Boolean);
+
+    const needsDelay = gameOver || frameAdvanced || within10thReset;
+
+    if (needsDelay) {
       setTimeout(() => {
-        setPinState(Array(10).fill(true));
+        setGameState(newState);
         setRecording(null);
-        setPhase('aiming');
-        throwCount.current = 0;
+        setPhase(gameOver ? 'results' : 'aiming');
       }, 2500);
     } else {
-      setPinState(newPins);
+      setGameState(newState);
       setRecording(null);
       setPhase('aiming');
     }
   }
 
+  if (phase === 'results') {
+    return (
+      <BowlingResultsScreen
+        players={[{ id: PLAYER_ID, name: 'You' }]}
+        throwHistory={gameState.throwHistory}
+        onBowlAgain={() => {
+          setGameState(initialState());
+          setRecording(null);
+          setPhase('aiming');
+        }}
+        onLeave={() => window.history.back()}
+      />
+    );
+  }
+
   return (
-    <div className="w-screen h-screen overflow-hidden bg-gray-950">
+    <div className="w-screen h-screen overflow-hidden bg-gray-950 relative">
       <BowlingScene
-        myPlayerId="test-player"
-        pinState={pinState}
+        myPlayerId={PLAYER_ID}
+        pinState={gameState.pinState}
         recording={recording}
         phase={phase}
         isMyTurn={true}
         onThrow={handleThrow}
         onReplayComplete={handleReplayComplete}
       />
+
+      {/* ScoreCard overlay */}
+      <div
+        style={{
+          position: 'absolute', top: 8, left: 8, right: 8,
+          background: 'rgba(0,0,0,0.6)', borderRadius: 6, padding: '6px 8px',
+        }}
+      >
+        <ScoreCard
+          playerName="You"
+          frameThrows={frames}
+          activeFrame={gameState.currentFrame}
+          cumScores={cumScores}
+        />
+      </div>
     </div>
   );
 }
