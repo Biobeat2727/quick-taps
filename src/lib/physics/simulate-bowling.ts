@@ -114,7 +114,7 @@ export async function simulateBowl(params: ThrowParams): Promise<BowlingRawRecor
   // Positive spin = right hook (positive X drift), so angvel.z = -spin (right-hand rule).
   const rollAngvel = speed / BALL_RADIUS; // natural forward roll (positive X for +Z travel)
   ballBody.setLinvel({ x: Math.sin(direction) * speed, y: 0, z: Math.cos(direction) * speed }, true);
-  ballBody.setAngvel({ x: rollAngvel, y: 0, z: -spin * 5 }, true);
+  ballBody.setAngvel({ x: rollAngvel, y: 0, z: spin * 5 }, true);
 
   // ── Record + simulate ─────────────────────────────────────────────────────
 
