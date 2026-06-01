@@ -108,9 +108,13 @@ export async function simulateBowl(params: ThrowParams): Promise<BowlingRawRecor
     ballBody,
   );
 
-  // Launch
+  // Launch — rolling velocity + Z-axis spin for hook.
+  // Y-axis spin creates zero contact slip (contact lies on Y axis), so hook must come
+  // from Z angular velocity which produces lateral sliding at the contact patch.
+  // Positive spin = right hook (positive X drift), so angvel.z = -spin (right-hand rule).
+  const rollAngvel = speed / BALL_RADIUS; // natural forward roll (positive X for +Z travel)
   ballBody.setLinvel({ x: Math.sin(direction) * speed, y: 0, z: Math.cos(direction) * speed }, true);
-  ballBody.setAngvel({ x: 0, y: spin * 15, z: 0 }, true);
+  ballBody.setAngvel({ x: rollAngvel, y: 0, z: -spin * 5 }, true);
 
   // ── Record + simulate ─────────────────────────────────────────────────────
 

@@ -75,9 +75,9 @@ function BowlingReplayDriver({
 const DOT_COUNT   = 14;
 const DOT_SPACING = 1.3;
 const DOT_Y       = 0.065;
-// Lateral drift coefficient: spin=1 causes ~0.35 units hook at z=17.5
-// 0.35 = k * (17.5 - 0.3)² → k ≈ 0.00118
-const HOOK_K = 0.00118;
+// Lateral drift coefficient: spin=1 causes ~0.43 units hook at z=17.5
+// 0.43 = k * (17.5 - 0.3)² → k ≈ 0.00145
+const HOOK_K = 0.00145;
 
 function AimSystem({
   aimXRef,
