@@ -218,26 +218,20 @@ function SceneContents({
       <ambientLight intensity={0.6} />
       <directionalLight position={[5, 10, 5]} intensity={1.2} />
 
-      {/* Lane — extended to the backstop at z=19.1 */}
-      <mesh position={[0, 0, 9.55]}>
-        <boxGeometry args={[1.06, 0.01, 19.1]} />
+      {/* Lane */}
+      <mesh position={[0, 0, 9.0]}>
+        <boxGeometry args={[1.06, 0.01, 18.5]} />
         <meshStandardMaterial color="#C8A96E" />
       </mesh>
 
       {/* Gutters */}
-      <mesh position={[-0.655, -0.005, 9.55]}>
-        <boxGeometry args={[0.25, 0.01, 19.1]} />
+      <mesh position={[-0.655, -0.005, 9.0]}>
+        <boxGeometry args={[0.25, 0.01, 18.5]} />
         <meshStandardMaterial color="#8B6F4E" />
       </mesh>
-      <mesh position={[0.655, -0.005, 9.55]}>
-        <boxGeometry args={[0.25, 0.01, 19.1]} />
+      <mesh position={[0.655, -0.005, 9.0]}>
+        <boxGeometry args={[0.25, 0.01, 18.5]} />
         <meshStandardMaterial color="#8B6F4E" />
-      </mesh>
-
-      {/* Backstop wall */}
-      <mesh position={[0, 0.25, 19.1]}>
-        <boxGeometry args={[1.56, 0.5, 0.05]} />
-        <meshStandardMaterial color="#8B6F4E" roughness={0.8} />
       </mesh>
 
       {/* Foul line */}
