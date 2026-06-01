@@ -576,80 +576,6 @@ function PowerBar({
   );
 }
 
-// ── SpinBar ───────────────────────────────────────────────────────────────────
-// Horizontal indicator showing current hook amount.
-// DOM mutation only — no React state.
-
-function SpinBar({
-  spinRef,
-  enabled,
-}: {
-  spinRef: React.RefObject<number>;
-  enabled: boolean;
-}) {
-  const dotRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!enabled) {
-      if (dotRef.current) {
-        dotRef.current.style.left        = '50%';
-        dotRef.current.style.background   = '#444';
-        dotRef.current.style.boxShadow    = 'none';
-      }
-      return;
-    }
-    let raf: number;
-    function tick() {
-      const s = spinRef.current;
-      if (dotRef.current) {
-        dotRef.current.style.left = `${50 + s * 45}%`;
-        const active = Math.abs(s) > 0.05;
-        dotRef.current.style.background  = active ? '#F0C040' : '#555';
-        dotRef.current.style.boxShadow   = active ? '0 0 8px rgba(240,192,64,0.7)' : 'none';
-      }
-      raf = requestAnimationFrame(tick);
-    }
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [enabled, spinRef]);
-
-  return (
-    <div style={{
-      position: 'absolute', bottom: 116,
-      left: '50%', transform: 'translateX(-50%)',
-      width: 160, display: 'flex', flexDirection: 'column',
-      alignItems: 'center', gap: 4,
-      pointerEvents: 'none',
-    }}>
-      <span style={{
-        fontSize: 9, fontWeight: 700, letterSpacing: 1,
-        color: 'rgba(255,255,255,0.4)',
-      }}>
-        HOOK
-      </span>
-      <div style={{
-        width: '100%', height: 6, background: '#1a1a1a', borderRadius: 3,
-        border: '1px solid #333', position: 'relative',
-      }}>
-        {/* Center tick */}
-        <div style={{
-          position: 'absolute', left: '50%', top: 0, bottom: 0,
-          width: 1, background: '#444', transform: 'translateX(-50%)',
-        }} />
-        {/* Indicator dot */}
-        <div
-          ref={dotRef}
-          style={{
-            position: 'absolute', left: '50%', top: '50%',
-            transform: 'translate(-50%, -50%)',
-            width: 10, height: 10, borderRadius: '50%',
-            background: '#555',
-          }}
-        />
-      </div>
-    </div>
-  );
-}
 
 // ── BowlingScene ──────────────────────────────────────────────────────────────
 
@@ -695,14 +621,11 @@ export function BowlingScene({
       {/* Oscillating power bar */}
       {canThrow && <PowerBar powerRef={powerRef} enabled={canThrow} />}
 
-      {/* Hook indicator */}
-      {canThrow && <SpinBar spinRef={spinRef} enabled={canThrow} />}
-
       {/* Hint */}
       {canThrow && (
         <p style={{
-          position: 'absolute', bottom: 108, left: 0, right: 0,
-          textAlign: 'center', color: 'rgba(255,255,255,0.35)',
+          position: 'absolute', bottom: 220, left: 0, right: 0,
+          textAlign: 'center', color: 'rgba(255,255,255,0.75)',
           fontSize: 11, margin: 0, pointerEvents: 'none', userSelect: 'none',
         }}>
           Drag to aim · Hold ↺↻ to hook
