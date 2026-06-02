@@ -34,20 +34,11 @@ export async function simulateBowl(params: ThrowParams): Promise<BowlingRawRecor
     );
   }
 
-  // Gutter floors
+  // Gutter floors — flat cuboid at the bottom of the visual trough (y = center - r = -0.25)
   for (const sx of [-1, 1] as const) {
-    const b = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(sx * 0.655, -0.01, 9.0));
+    const b = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(sx * 0.655, -0.25, 9.0));
     world.createCollider(
-      RAPIER.ColliderDesc.cuboid(0.125, 0.01, 9.5).setFriction(0.12).setRestitution(0.3),
-      b,
-    );
-  }
-
-  // Gutter inner walls
-  for (const sx of [-1, 1] as const) {
-    const b = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(sx * LANE_HALF_WIDTH, 0.09, 9.0));
-    world.createCollider(
-      RAPIER.ColliderDesc.cuboid(0.01, 0.1, 9.5).setFriction(0.1).setRestitution(0.2),
+      RAPIER.ColliderDesc.cuboid(0.125, 0.01, 9.5).setFriction(0.05).setRestitution(0.1),
       b,
     );
   }

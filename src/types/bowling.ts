@@ -19,3 +19,11 @@ export interface BowlingDecodedRecording {
   pinFrames: Float32Array;   // numFrames × 70 (10 pins × 7 components)
   knockedPins: boolean[];
 }
+
+export interface BowlingGameState {
+  currentFrame: number;       // 0–9
+  currentThrow: number;       // 1 or 2 (3 for 10th frame bonus)
+  activePlayerId: string;
+  pinState: boolean[];
+  throwHistory: Record<string, number[][]>; // playerId → frames → throws (pin counts)
+}

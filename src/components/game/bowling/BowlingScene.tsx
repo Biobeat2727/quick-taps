@@ -298,15 +298,25 @@ function SceneContents({
         <meshStandardMaterial map={laneTexture} roughness={0.3} metalness={0.0} />
       </mesh>
 
-      {/* Gutters */}
-      <mesh position={[-0.655, -0.005, 9.0]}>
-        <boxGeometry args={[0.25, 0.01, 18.5]} />
-        <meshStandardMaterial color="#3D2B1A" roughness={0.9} />
+      {/* Gutters — half-cylinder troughs; rotation=[PI/2,0,0] puts axis along Z */}
+      {/* Left: thetaStart=PI so arc curves outward (-X), opening faces lane */}
+      <mesh position={[-0.655, -0.14, 9.0]} rotation={[Math.PI / 2, 0, 0]}>
+        <cylinderGeometry args={[0.125, 0.125, 18.5, 16, 1, true, Math.PI, Math.PI]} />
+        <meshStandardMaterial color="#3D2B1A" roughness={0.9} side={THREE.BackSide} />
       </mesh>
-      <mesh position={[0.655, -0.005, 9.0]}>
-        <boxGeometry args={[0.25, 0.01, 18.5]} />
-        <meshStandardMaterial color="#3D2B1A" roughness={0.9} />
+      {/* Right: thetaStart=0 so arc curves outward (+X), opening faces lane */}
+      <mesh position={[0.655, -0.14, 9.0]} rotation={[Math.PI / 2, 0, 0]}>
+        <cylinderGeometry args={[0.125, 0.125, 18.5, 16, 1, true, 0, Math.PI]} />
+        <meshStandardMaterial color="#3D2B1A" roughness={0.9} side={THREE.BackSide} />
       </mesh>
+
+      {/* Gutter outer rails — sit just outside the half-cylinder rim at x=±0.78 */}
+      {([-1, 1] as const).map((side) => (
+        <mesh key={`rail-${side}`} position={[side * 0.80, -0.125, 9.0]}>
+          <boxGeometry args={[0.008, 0.25, 18.5]} />
+          <meshStandardMaterial color="#1a0f0a" roughness={0.9} />
+        </mesh>
+      ))}
 
       {/* Approach surface — sits behind the foul line, lowered to avoid z-fighting with lane */}
       <mesh position={[0, -0.001, -1.5]}>

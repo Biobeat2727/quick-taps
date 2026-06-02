@@ -46,9 +46,42 @@ export interface GameStartedMessage {
   };
 }
 
+// ── Bowling messages ──────────────────────────────────────────────────────────
+
+import type { BowlingGameState } from '@/types/bowling';
+
+export interface BowlStartedMessage {
+  name: "bowl:started";
+  data: {
+    sessionId: string;
+  };
+}
+
+export interface BowlThrowMessage {
+  name: "bowl:throw";
+  data: {
+    playerId: string;
+    throwIndex: number;
+    knockedPins: boolean[];
+    gameState: BowlingGameState;
+  };
+}
+
+export interface BowlGameOverMessage {
+  name: "bowl:game:over";
+  data: {
+    finalScores: Record<string, number>;
+  };
+}
+
+// ── Union types ───────────────────────────────────────────────────────────────
+
 export type SessionsMessage = SessionListUpdatedMessage;
 export type SessionMessage =
   | PlayerJoinedMessage
   | PlayerLeftMessage
   | PlayerColorChangedMessage
-  | GameStartedMessage;
+  | GameStartedMessage
+  | BowlStartedMessage
+  | BowlThrowMessage
+  | BowlGameOverMessage;

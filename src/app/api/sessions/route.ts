@@ -5,7 +5,7 @@ import { CHANNELS } from "@/lib/ably/channels";
 import { z } from "zod";
 
 const CreateSchema = z.object({
-  game: z.enum(["marble_race"]),
+  game: z.enum(["marble_race", "bowling"]),
   playerName: z.string().min(1).max(32),
   playerColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
 });

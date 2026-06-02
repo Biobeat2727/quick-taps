@@ -80,6 +80,9 @@ export default function SessionRoom({ sessionId }: { sessionId: string }) {
         const { mode, seed } = msg.data as { sessionId: string; mode: string; seed: number };
         router.push(`/session/${sessionId}/race?mode=${mode}&seed=${seed}`);
       }
+      if (msg.name === "bowl:started") {
+        router.push(`/session/${sessionId}/bowling`);
+      }
     });
     return () => {
       channel.unsubscribe();
@@ -121,6 +124,26 @@ export default function SessionRoom({ sessionId }: { sessionId: string }) {
       body: JSON.stringify({ playerId: playerInfo.playerId }),
     });
     router.push("/");
+  }
+
+  async function handleStartBowling() {
+    if (!playerInfo) return;
+    setStarting(true);
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}/start-bowling`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ playerId: playerInfo.playerId }),
+      });
+      if (!res.ok) {
+        setStarting(false);
+        setError("Couldn't start bowling. Try again.");
+      }
+      // bowl:started Ably message drives the transition for all players
+    } catch {
+      setStarting(false);
+      setError("Couldn't start bowling. Try again.");
+    }
   }
 
   async function handleStartWithMode(mode: '2d' | '3d') {
@@ -246,10 +269,18 @@ export default function SessionRoom({ sessionId }: { sessionId: string }) {
         </div>
       </div>
 
-      {/* Start Race — creator only */}
+      {/* Start game — creator only */}
       {isCreator && (
         <div className="px-4 py-4 border-t border-gray-800/60">
-          {!pickingMode ? (
+          {session.game === "bowling" ? (
+            <button
+              onClick={() => void handleStartBowling()}
+              disabled={starting}
+              className="w-full rounded-2xl py-4 text-lg font-bold bg-amber-400 text-gray-950 active:scale-95 transition-transform disabled:opacity-50"
+            >
+              {starting ? "Starting…" : "Start Bowling"}
+            </button>
+          ) : !pickingMode ? (
             <>
               <button
                 onClick={() => setPickingMode(true)}
@@ -305,7 +336,7 @@ export default function SessionRoom({ sessionId }: { sessionId: string }) {
       {starting && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/90">
           <span className="text-amber-400 text-xl animate-pulse">
-            Race starting…
+            {session.game === "bowling" ? "Bowling starting…" : "Race starting…"}
           </span>
         </div>
       )}

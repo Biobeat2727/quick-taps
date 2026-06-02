@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Ably from "ably";
-import type { Session } from "@/types/session";
+import type { GameId, Session } from "@/types/session";
 import { GAME_LABELS, MARBLE_COLORS } from "@/lib/constants";
 
 // Stable anonymous ID used as Ably clientId before the player joins a session
@@ -20,6 +20,7 @@ type ColorPickerState = {
   action: "create" | "join";
   sessionId?: string;
   takenColors: string[];
+  game?: GameId;
 };
 
 export default function HomePage() {
@@ -27,6 +28,7 @@ export default function HomePage() {
   const [playerName, setPlayerName] = useState<string | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [colorPicker, setColorPicker] = useState<ColorPickerState | null>(null);
+  const [gamePicker, setGamePicker] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -85,7 +87,7 @@ export default function HomePage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          game: "marble_race",
+          game: colorPicker?.game ?? "marble_race",
           playerName,
           playerColor: color,
         }),
@@ -143,7 +145,7 @@ export default function HomePage() {
   if (!playerName) return null;
 
   return (
-    <main className="flex h-full flex-col bg-gray-950 text-white">
+    <main className="flex flex-col bg-gray-950 text-white" style={{ minHeight: '100dvh' }}>
       {/* Header */}
       <header className="flex items-center justify-between px-4 py-4 border-b border-gray-800/60">
         <h1 className="text-lg font-bold text-amber-400">Quick Taps</h1>
@@ -188,14 +190,23 @@ export default function HomePage() {
       {/* Start a game */}
       <div className="px-4 py-4 border-t border-gray-800/60">
         <button
-          onClick={() =>
-            setColorPicker({ action: "create", takenColors: [] })
-          }
+          onClick={() => setGamePicker(true)}
           className="w-full rounded-2xl py-4 text-lg font-bold bg-amber-400 text-gray-950 active:scale-95 transition-transform"
         >
           Start a game
         </button>
       </div>
+
+      {/* Game picker bottom sheet */}
+      {gamePicker && (
+        <GamePickerSheet
+          onPick={(game) => {
+            setGamePicker(false);
+            setColorPicker({ action: "create", takenColors: [], game });
+          }}
+          onCancel={() => setGamePicker(false)}
+        />
+      )}
 
       {/* Color picker bottom sheet */}
       {colorPicker && (
@@ -263,6 +274,49 @@ function SessionCard({
         {full ? "Full" : "Join"}
       </button>
     </div>
+  );
+}
+
+// ── GamePickerSheet ─────────────────────────────────────────────────────────
+
+function GamePickerSheet({
+  onPick,
+  onCancel,
+}: {
+  onPick: (game: GameId) => void;
+  onCancel: () => void;
+}) {
+  const games: { id: GameId; label: string; description: string }[] = [
+    { id: "bowling", label: "Bowling", description: "10-frame turn-based bowling" },
+    { id: "marble_race", label: "Marble Race", description: "Physics marble race to the bottom" },
+  ];
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/60" onClick={onCancel} />
+      <div className="fixed bottom-0 left-0 right-0 z-50 rounded-t-3xl bg-gray-900 border-t border-gray-700 px-6 pb-8 pt-6">
+        <div className="w-10 h-1 rounded-full bg-gray-600 mx-auto mb-5" />
+        <h2 className="text-base font-bold text-center mb-5">Pick a game</h2>
+        <div className="flex flex-col gap-3">
+          {games.map(({ id, label, description }) => (
+            <button
+              key={id}
+              onClick={() => onPick(id)}
+              className="w-full rounded-2xl py-4 px-5 bg-gray-800 border border-gray-700 text-left active:scale-95 transition-transform"
+            >
+              <div className="font-bold text-white">{label}</div>
+              <div className="text-xs text-gray-400 mt-0.5">{description}</div>
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={onCancel}
+          className="mt-5 w-full py-3 text-sm text-gray-500 active:text-gray-300"
+        >
+          Cancel
+        </button>
+      </div>
+    </>
   );
 }
 

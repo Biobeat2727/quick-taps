@@ -1,4 +1,4 @@
-export type GameId = "marble_race";
+export type GameId = "marble_race" | "bowling";
 
 export interface SessionPlayer {
   id: string;
