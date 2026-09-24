@@ -35,8 +35,9 @@ export const redis =
   (useMemory
     ? memoryRedis()
     : new Redis({
-        url: process.env.UPSTASH_REDIS_REST_URL!,
-        token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+        // Vercel's Storage → Upstash integration injects KV_REST_API_*; a manual setup uses UPSTASH_*
+        url: (process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL)!,
+        token: (process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN)!,
       }));
 
 if (process.env.NODE_ENV !== "production") globalForRedis.redis = redis;

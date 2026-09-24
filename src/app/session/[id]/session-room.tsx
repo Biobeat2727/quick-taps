@@ -274,7 +274,7 @@ export default function SessionRoom({ sessionId }: { sessionId: string }) {
                     </span>
                   )}
                 </span>
-                {isMe && (
+                {isMe && session.game === "marble_race" && (
                   <button
                     onClick={() => setShowColorPicker(true)}
                     className="text-xs text-[var(--qt-mute)] underline underline-offset-2 active:text-[var(--qt-cream)]"

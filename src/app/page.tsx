@@ -77,7 +77,12 @@ export default function HomePage() {
     };
   }, [playerName, fetchSessions]);
 
-  async function handleCreate(color: string) {
+  // Only Marble Race makes you pick a marble; other games just need a free
+  // color (it's your dot on the scorecard), so pick one quietly.
+  const firstFreeColor = (taken: string[]) =>
+    MARBLE_COLORS.find((c) => !taken.includes(c.hex))?.hex ?? MARBLE_COLORS[0].hex;
+
+  async function handleCreate(color: string, game: GameId) {
     if (!playerName) return;
     setColorPicker(null);
     setLoading(true);
@@ -87,7 +92,7 @@ export default function HomePage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          game: colorPicker?.game ?? "marble_race",
+          game,
           playerName,
           playerColor: color,
         }),
@@ -106,7 +111,7 @@ export default function HomePage() {
     }
   }
 
-  async function handleJoin(sessionId: string, color: string) {
+  async function handleJoin(sessionId: string, color: string, attempt = 0) {
     if (!playerName) return;
     setColorPicker(null);
     setLoading(true);
@@ -121,6 +126,9 @@ export default function HomePage() {
         // Color was taken by a race condition — re-open picker with updated session
         const updated = await fetch(`/api/sessions/${sessionId}`);
         const session: Session = updated.ok ? await updated.json() : null;
+        if (session && session.game !== "marble_race" && attempt < 3) {
+          return handleJoin(sessionId, firstFreeColor(session.players.map((p) => p.color)), attempt + 1);
+        }
         setColorPicker({
           action: "join",
           sessionId,
@@ -189,13 +197,14 @@ export default function HomePage() {
             <SessionCard
               key={session.id}
               session={session}
-              onJoin={() =>
-                setColorPicker({
-                  action: "join",
-                  sessionId: session.id,
-                  takenColors: session.players.map((p) => p.color),
-                })
-              }
+              onJoin={() => {
+                const taken = session.players.map((p) => p.color);
+                if (session.game === "marble_race") {
+                  setColorPicker({ action: "join", sessionId: session.id, takenColors: taken });
+                } else {
+                  void handleJoin(session.id, firstFreeColor(taken));
+                }
+              }}
             />
           ))}
           </div>
@@ -217,7 +226,8 @@ export default function HomePage() {
         <GamePickerSheet
           onPick={(game) => {
             setGamePicker(false);
-            setColorPicker({ action: "create", takenColors: [], game });
+            if (game === "marble_race") setColorPicker({ action: "create", takenColors: [], game });
+            else void handleCreate(firstFreeColor([]), game);
           }}
           onCancel={() => setGamePicker(false)}
         />
@@ -229,7 +239,7 @@ export default function HomePage() {
           takenColors={colorPicker.takenColors}
           onPick={(color) => {
             if (colorPicker.action === "create") {
-              void handleCreate(color);
+              void handleCreate(color, colorPicker.game ?? "marble_race");
             } else if (colorPicker.sessionId) {
               void handleJoin(colorPicker.sessionId, color);
             }
