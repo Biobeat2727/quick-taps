@@ -15,6 +15,8 @@ import { computeGuide } from './aimGuide';
 
 type V = [number, number];
 
+const CUE_TILT = 0.11; // rad (~6°) — butt raised above the rails, as in a real stroke
+
 export interface AimState {
   angle: number;
   pull: number;        // 0..1 power pull-back (drives the cue stick)
@@ -281,8 +283,9 @@ function Scene({ table, playback, aim, onEnd, onEvent, apiRef, insets = { top: 6
       // stick lies behind the cue ball along −aim, pulled back by power
       const back = R + 0.012 + a.pull * 0.28;
       stick.visible = true;
-      stick.position.set(cx - Math.sin(a.angle) * back, 0.035, cz - Math.cos(a.angle) * back);
-      stick.rotation.set(0, a.angle, 0);
+      stick.position.set(cx - Math.sin(a.angle) * back, R, cz - Math.cos(a.angle) * back);
+      // yaw to the aim, then tip the butt up like a real stroke (YXZ: pitch in the stick's own frame)
+      stick.rotation.set(CUE_TILT, a.angle, 0, 'YXZ');
     } else {
       for (const o of [lineAim.current, lineObj.current, lineCue.current, ghost.current]) if (o) o.visible = false;
       // follow-through: thrust forward briefly after release, then vanish
@@ -387,18 +390,20 @@ function Scene({ table, playback, aim, onEnd, onEvent, apiRef, insets = { top: 6
       </mesh>
 
       {/* Cue stick: origin at the tip, extending back along −Z of its local frame */}
+      {/* Drawn last and without depth test: from overhead the cue is above everything on the table,
+          so a rail or ball must never hide it. */}
       <group ref={cueStick} visible={false}>
-        <mesh position={[0, 0, -0.72]} rotation={[Math.PI / 2, 0, 0]}>
+        <mesh position={[0, 0, -0.72]} rotation={[Math.PI / 2, 0, 0]} renderOrder={20}>
           <cylinderGeometry args={[0.0065, 0.015, 1.44, 16]} />
-          <meshPhysicalMaterial color="#d9b98a" roughness={0.35} clearcoat={1} />
+          <meshPhysicalMaterial color="#d9b98a" roughness={0.35} clearcoat={1} depthTest={false} transparent />
         </mesh>
-        <mesh position={[0, 0, -0.006]} rotation={[Math.PI / 2, 0, 0]}>
+        <mesh position={[0, 0, -0.006]} rotation={[Math.PI / 2, 0, 0]} renderOrder={21}>
           <cylinderGeometry args={[0.0066, 0.0066, 0.012, 12]} />
-          <meshBasicMaterial color={new THREE.Color(0.4, 2.2, 2.6)} toneMapped={false} />
+          <meshBasicMaterial color={new THREE.Color(0.4, 2.2, 2.6)} toneMapped={false} depthTest={false} transparent />
         </mesh>
-        <mesh position={[0, 0, -1.2]} rotation={[Math.PI / 2, 0, 0]}>
+        <mesh position={[0, 0, -1.2]} rotation={[Math.PI / 2, 0, 0]} renderOrder={21}>
           <cylinderGeometry args={[0.0135, 0.0152, 0.4, 16]} />
-          <meshPhysicalMaterial color="#1a0f24" roughness={0.3} clearcoat={1} />
+          <meshPhysicalMaterial color="#1a0f24" roughness={0.3} clearcoat={1} depthTest={false} transparent />
         </mesh>
       </group>
 
