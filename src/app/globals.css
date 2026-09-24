@@ -1,1 +1,110 @@
 @import "tailwindcss";
+
+/*
+  Quick Taps — "back-bar neon" theme
+  The room is near-black with a violet cast (a bar at night, not a gray
+  dashboard). One warm amber neon carries the brand; a cold ice-blue is
+  reserved exclusively for "live right now" signals. Nothing else glows.
+*/
+:root {
+  --qt-night: #0c0a14; /* the room */
+  --qt-panel: #171225; /* card / sheet surface */
+  --qt-panel-2: #1f1930; /* raised surface (buttons on panels) */
+  --qt-line: #2a2338; /* hairline borders */
+  --qt-amber: #ffb424; /* neon amber — brand, actions */
+  --qt-amber-core: #fff3d6; /* the hot core of the neon tube */
+  --qt-ice: #45e0ff; /* live/online signals only */
+  --qt-cream: #f5eddf; /* primary text */
+  --qt-mute: #8e86a0; /* secondary text */
+}
+
+body {
+  background: var(--qt-night);
+  color: var(--qt-cream);
+  font-family: var(--font-rubik), system-ui, sans-serif;
+}
+
+.font-display {
+  font-family: var(--font-bungee), var(--font-rubik), sans-serif;
+}
+
+/* ── Neon sign ──────────────────────────────────────────────────────────── */
+
+.neon-sign {
+  font-family: var(--font-bungee), sans-serif;
+  color: var(--qt-amber-core);
+  text-shadow:
+    0 0 6px rgba(255, 180, 36, 0.95),
+    0 0 18px rgba(255, 180, 36, 0.6),
+    0 0 46px rgba(255, 150, 20, 0.45);
+}
+
+/* One-time power-on flicker: two stutters, then steady. Element opacity
+   dims the text-shadow with it, which is exactly how a tube behaves. */
+@keyframes neon-power-on {
+  0%,
+  7% {
+    opacity: 0.08;
+  }
+  8%,
+  11% {
+    opacity: 1;
+  }
+  12%,
+  18% {
+    opacity: 0.15;
+  }
+  19%,
+  61% {
+    opacity: 1;
+  }
+  62%,
+  66% {
+    opacity: 0.3;
+  }
+  67%,
+  100% {
+    opacity: 1;
+  }
+}
+
+.neon-power-on {
+  animation: neon-power-on 1.5s ease-out 1 both;
+}
+
+/* ── Live signal ────────────────────────────────────────────────────────── */
+
+@keyframes live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.live-dot {
+  background: var(--qt-ice);
+  box-shadow: 0 0 8px var(--qt-ice);
+  animation: live-pulse 1.8s ease-in-out infinite;
+}
+
+/* ── Primary action ─────────────────────────────────────────────────────── */
+
+.btn-amber {
+  background: var(--qt-amber);
+  color: #1a1206;
+  box-shadow: 0 0 22px rgba(255, 180, 36, 0.25);
+}
+
+.btn-amber:active {
+  box-shadow: 0 0 30px rgba(255, 180, 36, 0.4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .neon-power-on,
+  .live-dot {
+    animation: none;
+  }
+}

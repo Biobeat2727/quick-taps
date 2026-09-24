@@ -40,7 +40,9 @@ export async function POST(
 
   session.players = session.players.filter((p) => p.id !== playerId);
 
-  if (session.players.length === 0) {
+  // NPCs don't hold a table open — delete once the last human leaves
+  const humansRemain = session.players.some((p) => !p.isNpc);
+  if (!humansRemain) {
     await deleteSession(id);
     await removeSessionFromIndex(id);
   } else {

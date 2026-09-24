@@ -191,8 +191,8 @@ export default function SessionRoom({ sessionId }: { sessionId: string }) {
 
   if (!session || !playerInfo) {
     return (
-      <main className="flex h-full items-center justify-center bg-gray-950">
-        <span className="text-amber-400 animate-pulse">Loading…</span>
+      <main className="flex items-center justify-center" style={{ minHeight: '100dvh' }}>
+        <span className="neon-sign text-xl animate-pulse">Loading…</span>
       </main>
     );
   }
@@ -203,16 +203,16 @@ export default function SessionRoom({ sessionId }: { sessionId: string }) {
     .map((p) => p.color);
 
   return (
-    <main className="flex h-full flex-col bg-gray-950 text-white">
+    <main className="flex flex-col w-full max-w-md mx-auto" style={{ minHeight: '100dvh' }}>
       {/* Header */}
-      <header className="flex items-center justify-between px-4 py-4 border-b border-gray-800/60">
+      <header className="flex items-center justify-between px-4 py-4 border-b border-[var(--qt-line)]">
         <button
           onClick={() => void handleLeave()}
-          className="text-sm text-gray-400 active:text-gray-200"
+          className="text-sm text-[var(--qt-mute)] active:text-[var(--qt-cream)]"
         >
           ← Leave
         </button>
-        <h1 className="text-base font-bold text-amber-400">
+        <h1 className="neon-sign text-lg leading-none pt-0.5">
           {GAME_LABELS[session.game] ?? session.game}
         </h1>
         <div className="w-14" />
@@ -230,9 +230,12 @@ export default function SessionRoom({ sessionId }: { sessionId: string }) {
 
       {/* Waiting room */}
       <div className="flex-1 flex flex-col items-center px-4 py-8 gap-6">
-        <p className="text-sm text-gray-400">
-          {isCreator ? "Waiting for players to join…" : "Waiting for the host to start…"}
-        </p>
+        <div className="flex items-center gap-2">
+          <span className="live-dot w-2 h-2 rounded-full" />
+          <p className="text-[11px] tracking-[0.3em] uppercase text-[var(--qt-mute)]">
+            {isCreator ? "Waiting for players" : "Waiting for the host"}
+          </p>
+        </div>
 
         {/* Player list */}
         <div className="w-full max-w-sm space-y-3">
@@ -241,16 +244,21 @@ export default function SessionRoom({ sessionId }: { sessionId: string }) {
             return (
               <div
                 key={player.id}
-                className="flex items-center gap-3 rounded-2xl bg-gray-800/80 border border-gray-700/40 px-4 py-3"
+                className={`flex items-center gap-3 rounded-2xl bg-[var(--qt-panel)] border px-4 py-3 ${
+                  isMe ? "border-[var(--qt-amber)]/40" : "border-[var(--qt-line)]"
+                }`}
               >
                 <span
-                  className="w-8 h-8 rounded-full flex-shrink-0 border-2 border-white/10"
-                  style={{ backgroundColor: player.color }}
+                  className="w-8 h-8 rounded-full flex-shrink-0"
+                  style={{
+                    backgroundColor: player.color,
+                    boxShadow: `0 0 10px ${player.color}88`,
+                  }}
                 />
                 <span className="font-semibold text-sm truncate flex-1">
                   {player.name}
                   {isMe && (
-                    <span className="ml-2 text-xs text-gray-500 font-normal">
+                    <span className="ml-2 text-xs text-[var(--qt-mute)] font-normal">
                       (you)
                     </span>
                   )}
@@ -258,7 +266,7 @@ export default function SessionRoom({ sessionId }: { sessionId: string }) {
                 {isMe && (
                   <button
                     onClick={() => setShowColorPicker(true)}
-                    className="text-xs text-gray-500 underline underline-offset-2 active:text-gray-300"
+                    className="text-xs text-[var(--qt-mute)] underline underline-offset-2 active:text-[var(--qt-cream)]"
                   >
                     Change
                   </button>
@@ -271,12 +279,12 @@ export default function SessionRoom({ sessionId }: { sessionId: string }) {
 
       {/* Start game — creator only */}
       {isCreator && (
-        <div className="px-4 py-4 border-t border-gray-800/60">
+        <div className="px-4 py-4 border-t border-[var(--qt-line)]">
           {session.game === "bowling" ? (
             <button
               onClick={() => void handleStartBowling()}
               disabled={starting}
-              className="w-full rounded-2xl py-4 text-lg font-bold bg-amber-400 text-gray-950 active:scale-95 transition-transform disabled:opacity-50"
+              className="btn-amber w-full rounded-2xl py-4 text-lg font-bold uppercase tracking-wide active:scale-95 transition-transform disabled:opacity-50"
             >
               {starting ? "Starting…" : "Start Bowling"}
             </button>
@@ -285,36 +293,38 @@ export default function SessionRoom({ sessionId }: { sessionId: string }) {
               <button
                 onClick={() => setPickingMode(true)}
                 disabled={starting}
-                className="w-full rounded-2xl py-4 text-lg font-bold bg-amber-400 text-gray-950 active:scale-95 transition-transform disabled:opacity-50"
+                className="btn-amber w-full rounded-2xl py-4 text-lg font-bold uppercase tracking-wide active:scale-95 transition-transform disabled:opacity-50"
               >
                 {starting ? "Starting…" : "Start Race"}
               </button>
               {session.players.length === 1 && (
-                <p className="text-center text-xs text-gray-500 mt-2">
+                <p className="text-center text-xs text-[var(--qt-mute)] mt-2">
                   Solo? NPCs will fill the field.
                 </p>
               )}
             </>
           ) : (
             <div className="flex flex-col gap-3">
-              <p className="text-center text-sm font-semibold text-amber-400">Choose a view</p>
+              <p className="text-center text-[11px] tracking-[0.3em] uppercase text-[var(--qt-mute)]">
+                Choose a view
+              </p>
               <div className="flex gap-3">
                 <button
                   onClick={() => void handleStartWithMode('2d')}
-                  className="flex-1 rounded-2xl py-5 bg-amber-400 text-gray-950 font-bold text-base active:scale-95 transition-transform"
+                  className="btn-amber flex-1 rounded-2xl py-5 font-bold text-base uppercase tracking-wide active:scale-95 transition-transform"
                 >
                   2D Classic
                 </button>
                 <button
                   onClick={() => void handleStartWithMode('3d')}
-                  className="flex-1 rounded-2xl py-5 bg-white/10 text-white font-bold text-base border border-white/15 active:scale-95 transition-transform"
+                  className="flex-1 rounded-2xl py-5 bg-[var(--qt-panel-2)] text-[var(--qt-cream)] font-bold text-base uppercase tracking-wide border border-[var(--qt-line)] active:scale-95 active:border-[var(--qt-amber)] transition-transform"
                 >
                   3D
                 </button>
               </div>
               <button
                 onClick={() => setPickingMode(false)}
-                className="text-center text-xs text-gray-500 py-1 active:text-gray-300"
+                className="text-center text-xs text-[var(--qt-mute)] py-1 active:text-[var(--qt-cream)]"
               >
                 Cancel
               </button>
@@ -334,8 +344,8 @@ export default function SessionRoom({ sessionId }: { sessionId: string }) {
 
       {/* Start Race initiated overlay */}
       {starting && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/90">
-          <span className="text-amber-400 text-xl animate-pulse">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(12,10,20,0.9)]">
+          <span className="neon-sign text-2xl animate-pulse">
             {session.game === "bowling" ? "Bowling starting…" : "Race starting…"}
           </span>
         </div>
@@ -357,10 +367,10 @@ function ColorPickerSheet({
 }) {
   return (
     <>
-      <div className="fixed inset-0 z-40 bg-black/60" onClick={onCancel} />
-      <div className="fixed bottom-0 left-0 right-0 z-50 rounded-t-3xl bg-gray-900 border-t border-gray-700 px-6 pb-8 pt-6">
-        <div className="w-10 h-1 rounded-full bg-gray-600 mx-auto mb-5" />
-        <h2 className="text-base font-bold text-center mb-5">
+      <div className="fixed inset-0 z-40 bg-black/70" onClick={onCancel} />
+      <div className="fixed bottom-0 left-0 right-0 z-50 max-w-md mx-auto rounded-t-3xl bg-[var(--qt-panel)] border-t border-[var(--qt-line)] px-6 pb-8 pt-6">
+        <div className="w-10 h-1 rounded-full bg-[var(--qt-line)] mx-auto mb-5" />
+        <h2 className="text-[11px] tracking-[0.3em] uppercase text-[var(--qt-mute)] text-center mb-5">
           Pick your marble
         </h2>
         <div className="grid grid-cols-4 gap-5">
@@ -380,10 +390,15 @@ function ColorPickerSheet({
                       ? "opacity-20 border-transparent cursor-not-allowed"
                       : "border-white/20 active:scale-90 cursor-pointer"
                   }`}
-                  style={{ backgroundColor: hex }}
+                  style={{
+                    backgroundColor: hex,
+                    boxShadow: taken ? "none" : `0 0 14px ${hex}66`,
+                  }}
                 />
                 <span
-                  className={`text-xs ${taken ? "text-gray-600" : "text-gray-300"}`}
+                  className={`text-xs ${
+                    taken ? "text-[var(--qt-line)]" : "text-[var(--qt-mute)]"
+                  }`}
                 >
                   {name}
                 </span>
@@ -393,7 +408,7 @@ function ColorPickerSheet({
         </div>
         <button
           onClick={onCancel}
-          className="mt-6 w-full py-3 text-sm text-gray-500 active:text-gray-300"
+          className="mt-6 w-full py-3 text-sm text-[var(--qt-mute)] active:text-[var(--qt-cream)]"
         >
           Cancel
         </button>

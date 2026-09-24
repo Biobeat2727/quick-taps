@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Ably from 'ably';
 import MarbleRace from '@/components/game/marble-race/MarbleRace';
 import MarbleRaceScene from '@/components/game/marble-race/MarbleRaceScene';
 import type { Session, SessionPlayer } from '@/types/session';
@@ -35,6 +36,7 @@ export default function RaceRoom({ sessionId, mode, seed }: Props) {
   const [myPlayerId, setMyPlayerId] = useState('');
   const [isProjector, setIsProjector] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [rematch, setRematch] = useState<'none' | 'requested' | 'waiting'>('none');
 
   useEffect(() => {
     const proj = new URLSearchParams(window.location.search).has('projector');
@@ -77,6 +79,46 @@ export default function RaceRoom({ sessionId, mode, seed }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
+  // Subscribe for the rematch: when the host restarts, game:started carries a
+  // fresh seed and every client (including the projector) jumps to the new race.
+  useEffect(() => {
+    let clientId = '';
+    try {
+      const raw = localStorage.getItem(`qt:player:${sessionId}`);
+      clientId = raw ? (JSON.parse(raw) as { playerId: string }).playerId : '';
+    } catch { /* fall through to browserId */ }
+    if (!clientId) {
+      clientId = localStorage.getItem('qt:browserId') ?? crypto.randomUUID();
+      localStorage.setItem('qt:browserId', clientId);
+    }
+
+    const client = new Ably.Realtime({
+      authUrl: `/api/ably/token?playerId=${encodeURIComponent(clientId)}&sessionId=${encodeURIComponent(sessionId)}`,
+    });
+    const channel = client.channels.get(`qt:session:${sessionId}`);
+    // .catch: attach rejects with "Connection closed" if we unmount (e.g. the
+    // rematch remount) before the connection finishes establishing
+    channel
+      .subscribe('game:started', (msg) => {
+        const { mode: newMode, seed: newSeed } = msg.data as { mode: string; seed: number };
+        const proj = new URLSearchParams(window.location.search).has('projector') ? '&projector=true' : '';
+        router.push(`/session/${sessionId}/race?mode=${newMode}&seed=${newSeed}${proj}`);
+      })
+      .catch(() => {});
+    return () => {
+      channel.unsubscribe();
+      client.close();
+    };
+  }, [sessionId, router]);
+
+  // Keep the session alive while people sit on the results screen
+  useEffect(() => {
+    const interval = setInterval(() => {
+      void fetch(`/api/sessions/${sessionId}/heartbeat`, { method: 'PATCH' });
+    }, 60_000);
+    return () => clearInterval(interval);
+  }, [sessionId]);
+
   if (error) {
     return (
       <main style={{
@@ -104,36 +146,96 @@ export default function RaceRoom({ sessionId, mode, seed }: Props) {
     );
   }
 
-  const handleRaceFinished = () => {
-    if (!isProjector && players![0] && myPlayerId === players![0].id) {
-      void fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' });
+  // The session survives the race — it's only deleted when the last human
+  // leaves (the leave route handles that).
+  const handleRaceFinished = () => {};
+
+  const isHost = !isProjector && !!players![0] && myPlayerId === players![0].id;
+
+  const handleLeave = () => {
+    if (!isProjector && myPlayerId) {
+      void fetch(`/api/sessions/${sessionId}/leave`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId: myPlayerId }),
+      });
     }
+    router.push('/');
   };
+
+  const handleRaceAgain = () => {
+    if (!isHost) {
+      // Non-hosts can't restart; game:started will pull them in when the host does
+      setRematch('waiting');
+      return;
+    }
+    setRematch('requested');
+    void fetch(`/api/sessions/${sessionId}/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ playerId: myPlayerId, mode }),
+    }).then((res) => {
+      if (!res.ok) setRematch('none');
+      // On success, game:started drives navigation for everyone
+    }).catch(() => setRematch('none'));
+  };
+
+  const rematchOverlay = rematch !== 'none' && (
+    <div
+      style={{
+        position: 'fixed', inset: 0, zIndex: 60,
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        gap: 16, background: 'rgba(12,10,20,0.9)',
+      }}
+    >
+      <span className="neon-sign" style={{ fontSize: 26 }}>
+        {rematch === 'requested' ? 'Rematch starting…' : 'Waiting for the host…'}
+      </span>
+      {rematch === 'waiting' && (
+        <button
+          onClick={handleLeave}
+          style={{
+            padding: '12px 28px', borderRadius: 14,
+            background: 'var(--qt-panel-2, #1F1930)', color: 'var(--qt-cream, #F5EDDF)',
+            border: '1px solid var(--qt-line, #2A2338)', fontWeight: 700, cursor: 'pointer',
+          }}
+        >
+          Leave instead
+        </button>
+      )}
+    </div>
+  );
 
   if (mode === '3d') {
     return (
-      <MarbleRaceScene
-        players={players!}
-        myPlayerId={myPlayerId}
-        isProjector={isProjector}
-        seed={seed}
-        recording={recording!}
-        onLeave={() => router.push('/')}
-        onRaceAgain={() => router.push('/')}
-        onRaceFinished={handleRaceFinished}
-      />
+      <>
+        <MarbleRaceScene
+          players={players!}
+          myPlayerId={myPlayerId}
+          isProjector={isProjector}
+          seed={seed}
+          recording={recording!}
+          onLeave={handleLeave}
+          onRaceAgain={handleRaceAgain}
+          onRaceFinished={handleRaceFinished}
+        />
+        {rematchOverlay}
+      </>
     );
   }
 
   return (
-    <MarbleRace
-      players={players!}
-      myPlayerId={myPlayerId}
-      isProjector={isProjector}
-      seed={seed}
-      onLeave={() => router.push('/')}
-      onRaceAgain={() => router.push('/')}
-      onRaceFinished={handleRaceFinished}
-    />
+    <>
+      <MarbleRace
+        players={players!}
+        myPlayerId={myPlayerId}
+        isProjector={isProjector}
+        seed={seed}
+        onLeave={handleLeave}
+        onRaceAgain={handleRaceAgain}
+        onRaceFinished={handleRaceFinished}
+      />
+      {rematchOverlay}
+    </>
   );
 }

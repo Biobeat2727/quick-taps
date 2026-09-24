@@ -3,12 +3,14 @@
 import { useRef, useMemo, useEffect, useState, useCallback } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import {
+  AdditiveBlending,
   CatmullRomCurve3,
   TubeGeometry,
   CylinderGeometry,
   Vector3,
   DoubleSide,
   type Mesh,
+  type MeshBasicMaterial,
 } from 'three';
 import {
   buildParticipants, ordinal, CountdownOverlay, ResultsScreen,
@@ -71,6 +73,10 @@ const FUNNEL_CENTER_Z = 244;
 const MM_H     = 240; // px — must match container height in JSX
 const MM_Z_MIN = -10;
 const MM_Z_MAX = 258;
+
+// ── Trail constants ───────────────────────────────────────────────────────────
+const TRAIL_LEN    = 7; // ghost spheres per marble
+const TRAIL_STRIDE = 2; // recorded frames between ghost samples
 
 function CameraRig({
   meshRefs,
@@ -165,9 +171,11 @@ function GlassTube({ path, color }: { path: [number, number, number][]; color: s
       <meshStandardMaterial
         color={color}
         transparent
-        opacity={0.22}
+        opacity={0.28}
         roughness={0.05}
         metalness={0.1}
+        emissive={color}
+        emissiveIntensity={0.45}
         side={DoubleSide}
       />
     </mesh>
@@ -175,17 +183,99 @@ function GlassTube({ path, color }: { path: [number, number, number][]; color: s
 }
 
 // ── Funnel ────────────────────────────────────────────────────────────────────
+// The finale: a neon vortex. Glass cone + amber rim ring + glowing throat +
+// particles forever spiralling into the drain.
+// Purely visual — the catch physics live in simulate-race.ts.
+
+const FUNNEL_PARTICLES = 30;
 
 function Funnel() {
   const visGeom = useMemo(() => new CylinderGeometry(2, 20, 28, 64, 1, true), []);
+
+  const throatRef  = useRef<Mesh>(null);
+  const partRefs   = useRef<(Mesh | null)[]>(Array(FUNNEL_PARTICLES).fill(null));
+  const partState  = useRef(
+    Array.from({ length: FUNNEL_PARTICLES }, () => ({
+      a: Math.random() * Math.PI * 2,
+      r: 2.5 + Math.random() * 17,
+      w: 0.8 + Math.random() * 0.8,
+    })),
+  );
+
+  useFrame((state, dt) => {
+    // Throat glow breathes
+    if (throatRef.current) {
+      (throatRef.current.material as MeshBasicMaterial).opacity =
+        0.65 + 0.25 * Math.sin(state.clock.elapsedTime * 4);
+    }
+
+    // Particles: angular speed and inward pull both rise toward the centre
+    for (let i = 0; i < FUNNEL_PARTICLES; i++) {
+      const p = partState.current[i];
+      const pull = 1 - p.r / 20;
+      p.a += dt * p.w * (1 + 2.5 * pull);
+      p.r -= dt * (1.2 + 3 * pull);
+      if (p.r < 2.2) {
+        p.r = 19.5;
+        p.a = Math.random() * Math.PI * 2;
+      }
+      const t = 1 - (p.r - 2.5) / 17.5;
+      partRefs.current[i]?.position.set(
+        p.r * Math.cos(p.a),
+        p.r * Math.sin(p.a),
+        -14 + 28 * t,
+      );
+    }
+  });
+
   return (
-    <mesh
-      geometry={visGeom}
-      position={[0, 0, 244]}
-      rotation={[Math.PI / 2, 0, 0]}
-    >
-      <meshStandardMaterial color="#6699aa" side={DoubleSide} transparent opacity={0.6} />
-    </mesh>
+    <group position={[0, 0, 244]}>
+      {/* Glass cone */}
+      <mesh geometry={visGeom} rotation={[Math.PI / 2, 0, 0]}>
+        <meshStandardMaterial
+          color="#3a4d63"
+          side={DoubleSide}
+          transparent
+          opacity={0.5}
+          emissive="#45e0ff"
+          emissiveIntensity={0.1}
+        />
+      </mesh>
+
+      {/* Amber rim ring — the goal, marked like a finish-line portal */}
+      <mesh position={[0, 0, -14]}>
+        <torusGeometry args={[20, 0.45, 12, 64]} />
+        <meshStandardMaterial color="#ffb424" emissive="#ffb424" emissiveIntensity={1.1} />
+      </mesh>
+
+      {/* Throat glow — marbles drop into light, not a black void */}
+      <mesh ref={throatRef} position={[0, 0, 13.2]}>
+        <circleGeometry args={[2.6, 32]} />
+        <meshBasicMaterial
+          color="#ffb424"
+          transparent
+          opacity={0.8}
+          side={DoubleSide}
+          blending={AdditiveBlending}
+          depthWrite={false}
+        />
+      </mesh>
+      <pointLight position={[0, 0, 10]} intensity={2.5} distance={40} color="#ffb424" />
+
+      {/* Suction particles */}
+      {Array.from({ length: FUNNEL_PARTICLES }, (_, i) => (
+        <mesh key={`fp-${i}`} ref={(el) => { partRefs.current[i] = el; }}>
+          <sphereGeometry args={[0.16, 6, 6]} />
+          <meshBasicMaterial
+            color="#9fe8ff"
+            transparent
+            opacity={0.55}
+            blending={AdditiveBlending}
+            depthWrite={false}
+          />
+        </mesh>
+      ))}
+    </group>
   );
 }
 
@@ -203,6 +293,7 @@ function ReplayDriver({
   recording,
   meshRefs,
   dotRefs,
+  trailRefs,
   participants,
   myIdx,
   hudRef,
@@ -213,6 +304,7 @@ function ReplayDriver({
   recording: DecodedRecording;
   meshRefs: React.RefObject<(Mesh | null)[]>;
   dotRefs: React.RefObject<(HTMLDivElement | null)[]>;
+  trailRefs: React.RefObject<(Mesh | null)[][]>;
   participants: Participant[];
   myIdx: number;
   hudRef: React.RefObject<HTMLDivElement | null>;
@@ -227,6 +319,9 @@ function ReplayDriver({
   const lastFrameRef = useRef(0);
   const doneRef     = useRef(false);
   const firedFinish = useRef(new Set<number>());
+  const lastRankRef = useRef(0);
+  // Per-marble ring of recent positions feeding the trail ghosts
+  const histRef = useRef<Vector3[][]>(participants.map(() => []));
 
   // delta is the real seconds since last render call (provided by @react-three/fiber)
   useFrame((_, delta) => {
@@ -246,7 +341,7 @@ function ReplayDriver({
     const { numMarbles, frames } = recording;
     const base = targetFrame * numMarbles * 3;
 
-    // Update mesh positions + minimap dots
+    // Update mesh positions + minimap dots + trail ghosts
     for (let i = 0; i < numMarbles; i++) {
       const off = base + i * 3;
       meshRefs.current[i]?.position.set(frames[off], frames[off + 1], frames[off + 2]);
@@ -255,16 +350,42 @@ function ReplayDriver({
         const pct = Math.max(0, Math.min(1, (frames[off + 2] - MM_Z_MIN) / (MM_Z_MAX - MM_Z_MIN)));
         dot.style.top = `${pct * MM_H}px`;
       }
+
+      const hist = histRef.current[i];
+      hist.push(new Vector3(frames[off], frames[off + 1], frames[off + 2]));
+      if (hist.length > TRAIL_LEN * TRAIL_STRIDE + 1) hist.shift();
+      const ghosts = trailRefs.current[i];
+      if (ghosts) {
+        for (let j = 0; j < TRAIL_LEN; j++) {
+          const idx = hist.length - 1 - (j + 1) * TRAIL_STRIDE;
+          if (idx >= 0) ghosts[j]?.position.copy(hist[idx]);
+        }
+      }
     }
 
-    // Rank HUD (DOM mutation, no setState)
+    // Rank HUD (DOM mutation, no setState) — flash on overtakes
     if (myIdx >= 0 && hudRef.current && meshRefs.current[myIdx]) {
       const myZ = meshRefs.current[myIdx]!.position.z;
       let rank = 1;
       for (let i = 0; i < numMarbles; i++) {
         if (i !== myIdx && (meshRefs.current[i]?.position.z ?? -Infinity) > myZ) rank++;
       }
-      hudRef.current.textContent = ordinal(rank);
+      if (rank !== lastRankRef.current) {
+        const hud = hudRef.current;
+        hud.textContent = ordinal(rank);
+        if (lastRankRef.current !== 0 && typeof hud.animate === 'function') {
+          const gained = rank < lastRankRef.current;
+          hud.animate(
+            [
+              { color: gained ? '#7CFC9B' : '#FF6B6B', transform: 'scale(1.4)' },
+              { color: gained ? '#7CFC9B' : '#FF6B6B', transform: 'scale(1.1)', offset: 0.6 },
+              { color: '#FFF3D6', transform: 'scale(1)' },
+            ],
+            { duration: 650, easing: 'ease-out' },
+          );
+        }
+        lastRankRef.current = rank;
+      }
     }
 
     // Burst ring when a marble first reaches the funnel tip
@@ -315,9 +436,12 @@ export default function MarbleRaceScene({
   const myIdx = participants.findIndex(p => p.id === myPlayerId);
 
   // Mesh refs — one per marble (Three.js Mesh, no physics)
-  const meshRefs = useRef<(Mesh | null)[]>(Array(participants.length).fill(null));
-  const dotRefs  = useRef<(HTMLDivElement | null)[]>(Array(participants.length).fill(null));
-  const hudRef   = useRef<HTMLDivElement>(null);
+  const meshRefs  = useRef<(Mesh | null)[]>(Array(participants.length).fill(null));
+  const dotRefs   = useRef<(HTMLDivElement | null)[]>(Array(participants.length).fill(null));
+  const trailRefs = useRef<(Mesh | null)[][]>(
+    participants.map(() => Array(TRAIL_LEN).fill(null)),
+  );
+  const hudRef    = useRef<HTMLDivElement>(null);
 
   // Initialise marble positions to frame 0 (pre-impulse rest positions)
   // so they're visible during the countdown.
@@ -367,7 +491,7 @@ export default function MarbleRaceScene({
   }
 
   return (
-    <div style={{ position: 'relative', width: '100vw', height: '100vh', background: '#1C1B16' }}>
+    <div style={{ position: 'relative', width: '100vw', height: '100vh', background: '#0C0A14' }}>
       <Canvas
         style={{ width: '100%', height: '100%' }}
         orthographic
@@ -375,21 +499,30 @@ export default function MarbleRaceScene({
       >
         <CameraRig meshRefs={meshRefs} myIdx={myIdx} isProjector={isProjector} />
 
-        <ambientLight intensity={0.6} />
-        <directionalLight position={[10, 20, 5]} intensity={1.5} />
-        <pointLight position={[0, 15, 155]} intensity={0.8} />
+        {/* Bar-at-night lighting: low ambient, coloured zone lights per act */}
+        <ambientLight intensity={0.5} />
+        <directionalLight position={[10, 20, 5]} intensity={1.3} />
+        <pointLight position={[0, 18, 28]}  intensity={2.2} distance={110} color="#ffb424" />
+        <pointLight position={[0, 18, 150]} intensity={2.0} distance={130} color="#45e0ff" />
+        <pointLight position={[0, 14, 244]} intensity={2.4} distance={90}  color="#ff8a3c" />
+
+        {/* Floor plane — grounds the track instead of floating in a void */}
+        <mesh position={[0, -14, 124]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[120, 340]} />
+          <meshStandardMaterial color="#12101e" roughness={0.9} metalness={0} />
+        </mesh>
 
         {/* Act 1 back wall — seals the entry so bumper-launched marbles can't escape backward */}
         <mesh position={[0, 0, -13]}>
           <boxGeometry args={[32, 6, 1]} />
-          <meshStandardMaterial color="#aaaaaa" />
+          <meshStandardMaterial color="#2a2338" metalness={0.5} roughness={0.4} />
         </mesh>
 
         {/* Outer walls (visual only) */}
         {[-15, 15].map(x => (
           <mesh key={`wall-${x}`} position={[x, 0, 110]}>
             <boxGeometry args={[1, 4, 240]} />
-            <meshStandardMaterial color="#aaaaaa" />
+            <meshStandardMaterial color="#2a2338" metalness={0.5} roughness={0.4} />
           </mesh>
         ))}
 
@@ -408,9 +541,11 @@ export default function MarbleRaceScene({
             <mesh key={`peg-${i}`} position={[x, y, z]}>
               <cylinderGeometry args={[bumper ? 0.75 : 0.6, bumper ? 0.75 : 0.6, 3, 12]} />
               <meshStandardMaterial
-                color={bumper ? '#ff8800' : '#dddddd'}
+                color={bumper ? '#ff8800' : '#c4bcd8'}
+                metalness={bumper ? 0.2 : 0.85}
+                roughness={bumper ? 0.5 : 0.25}
                 emissive={bumper ? '#ff5500' : '#000000'}
-                emissiveIntensity={bumper ? 0.5 : 0}
+                emissiveIntensity={bumper ? 0.9 : 0}
               />
             </mesh>
           );
@@ -420,7 +555,7 @@ export default function MarbleRaceScene({
         {[-6, 0, 6].map(cx => (
           <mesh key={`divider-${cx}`} position={[cx, 0, 79]}>
             <boxGeometry args={[2, 4, 28]} />
-            <meshStandardMaterial color="#999999" />
+            <meshStandardMaterial color="#2a2338" metalness={0.5} roughness={0.4} />
           </mesh>
         ))}
 
@@ -432,7 +567,7 @@ export default function MarbleRaceScene({
             rotation={[0, -side * Math.atan2(4, 26), 0]}
           >
             <boxGeometry args={[0.5, 4, Math.sqrt(4 * 4 + 26 * 26)]} />
-            <meshStandardMaterial color="#999999" />
+            <meshStandardMaterial color="#2a2338" metalness={0.5} roughness={0.4} />
           </mesh>
         ))}
 
@@ -450,21 +585,42 @@ export default function MarbleRaceScene({
             key={p.id}
             ref={(el) => { meshRefs.current[i] = el; }}
           >
-            <sphereGeometry args={[1, 16, 16]} />
+            <sphereGeometry args={[1, 24, 24]} />
             <meshStandardMaterial
               color={p.color}
-              roughness={0.25}
-              metalness={0.15}
-              emissive={i === myIdx ? p.color : '#000000'}
-              emissiveIntensity={i === myIdx ? 0.3 : 0}
+              roughness={0.15}
+              metalness={0.35}
+              emissive={p.color}
+              emissiveIntensity={i === myIdx ? 0.55 : 0.18}
             />
           </mesh>
         ))}
+
+        {/* Comet trails — ghost spheres fed recent positions by ReplayDriver */}
+        {participants.map((p, i) =>
+          Array.from({ length: TRAIL_LEN }, (_, j) => (
+            <mesh
+              key={`trail-${p.id}-${j}`}
+              position={[0, -1000, 0]}
+              ref={(el) => { trailRefs.current[i][j] = el; }}
+            >
+              <sphereGeometry args={[0.85 - j * 0.09, 8, 8]} />
+              <meshBasicMaterial
+                color={p.color}
+                transparent
+                opacity={0.4 - j * 0.05}
+                depthWrite={false}
+                blending={AdditiveBlending}
+              />
+            </mesh>
+          )),
+        )}
 
         <ReplayDriver
           recording={recording}
           meshRefs={meshRefs}
           dotRefs={dotRefs}
+          trailRefs={trailRefs}
           participants={participants}
           myIdx={myIdx}
           hudRef={hudRef}
@@ -539,8 +695,8 @@ export default function MarbleRaceScene({
           <div
             ref={hudRef}
             style={{
-              color: '#fff', fontWeight: 800, fontSize: 22,
-              fontFamily: 'system-ui, sans-serif', letterSpacing: '-0.5px',
+              color: '#FFF3D6', fontWeight: 400, fontSize: 22,
+              fontFamily: 'var(--font-bungee), system-ui, sans-serif',
             }}
           >
             1st

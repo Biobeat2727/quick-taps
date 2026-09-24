@@ -54,6 +54,7 @@ export async function POST(
   }
 
   session.lastActivity = Date.now();
+  session.status = "racing";
   await setSession(session);
 
   // Run the physics simulation server-side and store the recording.
@@ -68,6 +69,10 @@ export async function POST(
     mode: parsed.data.mode,
     seed: raceSeed,
   });
+
+  // Lobby list shows racing tables as not joinable
+  const sessionsChannel = ablyRest.channels.get(CHANNELS.sessions());
+  await sessionsChannel.publish("session:list:updated", null);
 
   return Response.json(session);
 }

@@ -145,11 +145,13 @@ export default function HomePage() {
   if (!playerName) return null;
 
   return (
-    <main className="flex flex-col bg-gray-950 text-white" style={{ minHeight: '100dvh' }}>
+    <main className="flex flex-col w-full max-w-md mx-auto" style={{ minHeight: '100dvh' }}>
       {/* Header */}
-      <header className="flex items-center justify-between px-4 py-4 border-b border-gray-800/60">
-        <h1 className="text-lg font-bold text-amber-400">Quick Taps</h1>
-        <span className="text-sm text-gray-400">{playerName}</span>
+      <header className="flex items-center justify-between px-4 py-4 border-b border-[var(--qt-line)]">
+        <h1 className="neon-sign text-xl leading-none pt-0.5">Quick Taps</h1>
+        <span className="rounded-full bg-[var(--qt-panel)] border border-[var(--qt-line)] px-3 py-1.5 text-sm text-[var(--qt-cream)] max-w-[45%] truncate">
+          {playerName}
+        </span>
       </header>
 
       {/* Error banner */}
@@ -163,15 +165,27 @@ export default function HomePage() {
       )}
 
       {/* Session list */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+      <div className="flex-1 overflow-y-auto px-4 py-5">
+        <div className="flex items-center gap-2 mb-3">
+          {sessions.length > 0 && (
+            <span className="live-dot w-2 h-2 rounded-full" />
+          )}
+          <h2 className="text-[11px] tracking-[0.3em] uppercase text-[var(--qt-mute)]">
+            On the floor
+          </h2>
+        </div>
         {sessions.length === 0 ? (
-          <p className="text-center text-gray-500 py-16 text-sm">
-            No open games right now.
-            <br />
-            Start one below.
-          </p>
+          <div className="text-center py-16">
+            <p className="text-[var(--qt-cream)] font-medium">
+              The floor is quiet.
+            </p>
+            <p className="mt-1 text-sm text-[var(--qt-mute)]">
+              Start a game and anyone at the bar can jump in.
+            </p>
+          </div>
         ) : (
-          sessions.map((session) => (
+          <div className="space-y-3">
+          {sessions.map((session) => (
             <SessionCard
               key={session.id}
               session={session}
@@ -183,15 +197,16 @@ export default function HomePage() {
                 })
               }
             />
-          ))
+          ))}
+          </div>
         )}
       </div>
 
       {/* Start a game */}
-      <div className="px-4 py-4 border-t border-gray-800/60">
+      <div className="px-4 py-4 border-t border-[var(--qt-line)]">
         <button
           onClick={() => setGamePicker(true)}
-          className="w-full rounded-2xl py-4 text-lg font-bold bg-amber-400 text-gray-950 active:scale-95 transition-transform"
+          className="btn-amber w-full rounded-2xl py-4 text-lg font-bold uppercase tracking-wide active:scale-95 transition-transform"
         >
           Start a game
         </button>
@@ -225,10 +240,8 @@ export default function HomePage() {
 
       {/* Loading overlay */}
       {loading && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/75">
-          <span className="text-amber-400 text-lg animate-pulse">
-            Joining…
-          </span>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(12,10,20,0.8)]">
+          <span className="neon-sign text-2xl animate-pulse">Joining…</span>
         </div>
       )}
     </main>
@@ -244,35 +257,52 @@ function SessionCard({
   session: Session;
   onJoin: () => void;
 }) {
+  const racing = session.status === "racing";
   const full = session.players.length >= 6;
+  const host = session.players[0];
 
   return (
-    <div className="rounded-2xl bg-gray-800/80 border border-gray-700/40 px-4 py-4 flex items-center justify-between gap-3">
+    <div className="rounded-2xl bg-[var(--qt-panel)] border border-[var(--qt-line)] px-4 py-4 flex items-center justify-between gap-3">
       <div className="min-w-0">
-        <p className="font-semibold truncate">
+        <p className="font-display text-[15px] text-[var(--qt-amber)] truncate">
           {GAME_LABELS[session.game] ?? session.game}
         </p>
-        <div className="flex items-center gap-1 mt-1.5">
+        {host && (
+          <p className="text-xs text-[var(--qt-mute)] mt-0.5 truncate">
+            {host.name}&apos;s table
+          </p>
+        )}
+        <div className="flex items-center gap-1.5 mt-2">
           {session.players.map((p) => (
             <span
               key={p.id}
-              className="w-4 h-4 rounded-full border border-gray-600 flex-shrink-0"
-              style={{ backgroundColor: p.color }}
+              className="w-4 h-4 rounded-full flex-shrink-0"
+              style={{
+                backgroundColor: p.color,
+                boxShadow: `0 0 8px ${p.color}`,
+              }}
               title={p.name}
             />
           ))}
-          <span className="text-xs text-gray-400 ml-1">
+          <span className="text-xs text-[var(--qt-mute)] ml-1">
             {session.players.length}/6
           </span>
         </div>
       </div>
-      <button
-        onClick={onJoin}
-        disabled={full}
-        className="flex-shrink-0 rounded-xl px-5 py-2.5 text-sm font-bold bg-amber-400 text-gray-950 disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 transition-transform"
-      >
-        {full ? "Full" : "Join"}
-      </button>
+      {racing ? (
+        <span className="flex-shrink-0 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-[var(--qt-ice)]">
+          <span className="live-dot w-2 h-2 rounded-full" />
+          Racing
+        </span>
+      ) : (
+        <button
+          onClick={onJoin}
+          disabled={full}
+          className="btn-amber flex-shrink-0 rounded-xl px-5 py-2.5 text-sm font-bold uppercase tracking-wide disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none active:scale-95 transition-transform"
+        >
+          {full ? "Full" : "Join"}
+        </button>
+      )}
     </div>
   );
 }
@@ -293,25 +323,31 @@ function GamePickerSheet({
 
   return (
     <>
-      <div className="fixed inset-0 z-40 bg-black/60" onClick={onCancel} />
-      <div className="fixed bottom-0 left-0 right-0 z-50 rounded-t-3xl bg-gray-900 border-t border-gray-700 px-6 pb-8 pt-6">
-        <div className="w-10 h-1 rounded-full bg-gray-600 mx-auto mb-5" />
-        <h2 className="text-base font-bold text-center mb-5">Pick a game</h2>
+      <div className="fixed inset-0 z-40 bg-black/70" onClick={onCancel} />
+      <div className="fixed bottom-0 left-0 right-0 z-50 max-w-md mx-auto rounded-t-3xl bg-[var(--qt-panel)] border-t border-[var(--qt-line)] px-6 pb-8 pt-6">
+        <div className="w-10 h-1 rounded-full bg-[var(--qt-line)] mx-auto mb-5" />
+        <h2 className="text-[11px] tracking-[0.3em] uppercase text-[var(--qt-mute)] text-center mb-5">
+          Pick a game
+        </h2>
         <div className="flex flex-col gap-3">
           {games.map(({ id, label, description }) => (
             <button
               key={id}
               onClick={() => onPick(id)}
-              className="w-full rounded-2xl py-4 px-5 bg-gray-800 border border-gray-700 text-left active:scale-95 transition-transform"
+              className="w-full rounded-2xl py-4 px-5 bg-[var(--qt-panel-2)] border border-[var(--qt-line)] text-left active:scale-95 active:border-[var(--qt-amber)] transition-transform"
             >
-              <div className="font-bold text-white">{label}</div>
-              <div className="text-xs text-gray-400 mt-0.5">{description}</div>
+              <div className="font-display text-[15px] text-[var(--qt-amber)]">
+                {label}
+              </div>
+              <div className="text-xs text-[var(--qt-mute)] mt-1">
+                {description}
+              </div>
             </button>
           ))}
         </div>
         <button
           onClick={onCancel}
-          className="mt-5 w-full py-3 text-sm text-gray-500 active:text-gray-300"
+          className="mt-5 w-full py-3 text-sm text-[var(--qt-mute)] active:text-[var(--qt-cream)]"
         >
           Cancel
         </button>
@@ -335,13 +371,13 @@ function ColorPickerSheet({
     <>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 z-40 bg-black/60"
+        className="fixed inset-0 z-40 bg-black/70"
         onClick={onCancel}
       />
       {/* Sheet */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 rounded-t-3xl bg-gray-900 border-t border-gray-700 px-6 pb-8 pt-6">
-        <div className="w-10 h-1 rounded-full bg-gray-600 mx-auto mb-5" />
-        <h2 className="text-base font-bold text-center mb-5">
+      <div className="fixed bottom-0 left-0 right-0 z-50 max-w-md mx-auto rounded-t-3xl bg-[var(--qt-panel)] border-t border-[var(--qt-line)] px-6 pb-8 pt-6">
+        <div className="w-10 h-1 rounded-full bg-[var(--qt-line)] mx-auto mb-5" />
+        <h2 className="text-[11px] tracking-[0.3em] uppercase text-[var(--qt-mute)] text-center mb-5">
           Pick your marble
         </h2>
         <div className="grid grid-cols-4 gap-5">
@@ -361,10 +397,15 @@ function ColorPickerSheet({
                       ? "opacity-20 border-transparent cursor-not-allowed"
                       : "border-white/20 active:scale-90 cursor-pointer"
                   }`}
-                  style={{ backgroundColor: hex }}
+                  style={{
+                    backgroundColor: hex,
+                    boxShadow: taken ? "none" : `0 0 14px ${hex}66`,
+                  }}
                 />
                 <span
-                  className={`text-xs ${taken ? "text-gray-600" : "text-gray-300"}`}
+                  className={`text-xs ${
+                    taken ? "text-[var(--qt-line)]" : "text-[var(--qt-mute)]"
+                  }`}
                 >
                   {name}
                 </span>
@@ -374,7 +415,7 @@ function ColorPickerSheet({
         </div>
         <button
           onClick={onCancel}
-          className="mt-6 w-full py-3 text-sm text-gray-500 active:text-gray-300"
+          className="mt-6 w-full py-3 text-sm text-[var(--qt-mute)] active:text-[var(--qt-cream)]"
         >
           Cancel
         </button>

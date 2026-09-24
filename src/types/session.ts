@@ -13,4 +13,6 @@ export interface Session {
   createdAt: number; // unix ms
   lastActivity: number; // unix ms
   players: SessionPlayer[];
+  // Absent on sessions created before this field existed — treat as "lobby"
+  status?: "lobby" | "racing";
 }

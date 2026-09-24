@@ -11,6 +11,8 @@ export default async function RacePage({
   const { mode, seed } = await searchParams;
   return (
     <RaceRoom
+      // Remount on rematch: a new seed must rebuild players, recording, and scene
+      key={`${mode}-${seed}`}
       sessionId={id}
       mode={mode === '2d' ? '2d' : '3d'}
       seed={seed ? parseInt(seed, 10) : 0}

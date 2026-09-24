@@ -1,5 +1,17 @@
 import type { Metadata, Viewport } from "next";
+import { Bungee, Rubik } from "next/font/google";
 import "./globals.css";
+
+const bungee = Bungee({
+  weight: "400",
+  subsets: ["latin"],
+  variable: "--font-bungee",
+});
+
+const rubik = Rubik({
+  subsets: ["latin"],
+  variable: "--font-rubik",
+});
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -10,7 +22,7 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
   title: "Quick Taps",
-  description: "Always-on bar mini games at IPA, Coeur d'Alene",
+  description: "The bar arcade. Always on.",
 };
 
 export default function RootLayout({
@@ -19,7 +31,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${bungee.variable} ${rubik.variable}`}>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />

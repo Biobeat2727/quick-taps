@@ -31,6 +31,11 @@ export async function POST(
 
   const { playerName, playerColor } = parsed.data;
 
+  // 409 is reserved for color conflicts (client re-opens the picker on it)
+  if (session.status === "racing") {
+    return Response.json({ error: "Race in progress" }, { status: 403 });
+  }
+
   if (session.players.some((p) => p.color === playerColor)) {
     return Response.json({ error: "Color already taken" }, { status: 409 });
   }
