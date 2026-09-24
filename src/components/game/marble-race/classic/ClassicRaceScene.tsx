@@ -1,5 +1,8 @@
 'use client';
 
+// ARCHIVED — renderer for the original 3D map (Classic Funnel). Superseded by
+// MapRaceScene + lib/marble/maps; kept playable at /marble-classic.
+
 import { useRef, useMemo, useEffect, useState, useCallback } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import {
@@ -15,9 +18,9 @@ import {
 import {
   buildParticipants, ordinal, CountdownOverlay, ResultsScreen,
   type Participant, type Phase,
-} from './marble-race-shared';
+} from '../marble-race-shared';
 import type { SessionPlayer } from '@/types/session';
-import type { DecodedRecording } from '@/types/race';
+import type { ClassicRecording } from '@/types/race';
 
 // ── Track geometry constants (visual only — physics runs server-side) ─────────
 
@@ -57,7 +60,7 @@ interface Props {
   myPlayerId: string;
   isProjector?: boolean;
   seed?: number;
-  recording: DecodedRecording;
+  recording: ClassicRecording;
   onLeave: () => void;
   onRaceAgain: () => void;
   onRaceFinished?: () => void;
@@ -301,7 +304,7 @@ function ReplayDriver({
   onAllFinished,
   onMarbleFinish,
 }: {
-  recording: DecodedRecording;
+  recording: ClassicRecording;
   meshRefs: React.RefObject<(Mesh | null)[]>;
   dotRefs: React.RefObject<(HTMLDivElement | null)[]>;
   trailRefs: React.RefObject<(Mesh | null)[][]>;
@@ -417,7 +420,7 @@ function ReplayDriver({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function MarbleRaceScene({
+export default function ClassicRaceScene({
   players,
   myPlayerId,
   isProjector = false,

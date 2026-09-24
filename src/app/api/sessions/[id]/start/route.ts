@@ -3,7 +3,10 @@ import { getSession, setSession } from "@/lib/redis/session";
 import { ablyRest } from "@/lib/ably/server";
 import { CHANNELS } from "@/lib/ably/channels";
 import { NPC_NAMES, MARBLE_COLORS } from "@/lib/constants";
-import { simulateRace } from "@/lib/physics/simulate-race";
+import RAPIER from "@dimforge/rapier3d-compat";
+import { runRaceSim } from "@/lib/marble/race-sim-core";
+import { getMap, DEFAULT_MAP_ID } from "@/lib/marble/maps";
+import type { RaceRecording } from "@/types/race";
 import { redis } from "@/lib/redis/client";
 import { z } from "zod";
 
@@ -11,9 +14,10 @@ export const runtime = 'nodejs';
 
 const RECORDING_TTL = 10 * 60; // 10 minutes — matches session TTL
 
+let rapierReady: Promise<void> | null = null;
+
 const StartSchema = z.object({
   playerId: z.string().min(1),
-  mode: z.enum(['2d', '3d']),
 });
 
 export async function POST(
@@ -60,13 +64,24 @@ export async function POST(
   // Run the physics simulation server-side and store the recording.
   // All clients will replay this identical recording — no physics on the client.
   const raceSeed = Math.floor(Math.random() * 2 ** 32);
-  const recording = await simulateRace(session.players, raceSeed);
+  rapierReady ??= RAPIER.init();
+  await rapierReady;
+  const map = getMap(DEFAULT_MAP_ID);
+  const res = runRaceSim(RAPIER, map, session.players.length, raceSeed);
+  const recording: RaceRecording = {
+    map: map.id,
+    marbles: session.players.map((p) => ({ id: p.id, name: p.name, color: p.color })),
+    numMarbles: res.numMarbles,
+    numFrames: res.numFrames,
+    framesBase64: Buffer.from(res.frames.buffer, res.frames.byteOffset, res.frames.byteLength).toString("base64"),
+    finishFrame: res.finishFrame,
+    ranking: res.ranking,
+  };
   await redis.set(`qt:race:recording:${id}`, recording, { ex: RECORDING_TTL });
 
   const channel = ablyRest.channels.get(CHANNELS.session(id));
   await channel.publish("game:started", {
     sessionId: id,
-    mode: parsed.data.mode,
     seed: raceSeed,
   });
 

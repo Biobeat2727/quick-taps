@@ -421,7 +421,7 @@ pin.translation().y < 0.08   // center dropped from ~0.173 to below 8 cm → pin
 - Rapier capsule/cylinder colliders both align on **Y axis** by default — correct for standing pins
 - **Do NOT use a single capsule for the full pin body** — hemispherical bottom → single-point floor contact → neutral equilibrium → pins fall before ball arrives. Always use the flat base disc (see Pin Physics section).
 - Pin compound collider local translations are relative to the rigid body origin at `y=0.191`. The flat base `setTranslation(0, -0.190, 0)` places its bottom exactly at world `y=0.000`.
-- Use inline Rapier init (`let rapierInited = false`) same as `simulate-race.ts` — do NOT share the singleton across files in Phase 1
+- Use inline Rapier init (`let rapierInited = false`) same as the (now archived) `lib/marble/classic/simulate-classic.ts` — do NOT share the singleton across files in Phase 1
 - `<Canvas>` — do NOT add `orthographic` prop — bowling uses perspective projection
 - Touch listeners need `{ passive: false }` + `e.preventDefault()` to suppress scroll during throw gesture
 - `BowlingReplayDriver` must reset its `elapsed`/`lastFrame`/`done` refs when `recording` prop changes (use `useEffect` watching `recording` to reset, or key the component on a throw counter)

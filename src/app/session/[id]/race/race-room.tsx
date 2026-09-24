@@ -3,36 +3,43 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Ably from 'ably';
-import MarbleRace from '@/components/game/marble-race/MarbleRace';
-import MarbleRaceScene from '@/components/game/marble-race/MarbleRaceScene';
+import MapRaceScene, { type MapRecording } from '@/components/game/marble-race/MapRaceScene';
+import { getMap } from '@/lib/marble/maps';
 import type { Session, SessionPlayer } from '@/types/session';
-import type { DecodedRecording, RaceRecording } from '@/types/race';
-
-type Mode = '2d' | '3d';
+import type { RaceRecording } from '@/types/race';
 
 interface Props {
   sessionId: string;
-  mode: Mode;
-  seed: number;
 }
 
-function decodeRecording(raw: RaceRecording): DecodedRecording {
+interface Decoded {
+  map: string;
+  marbles: RaceRecording['marbles'];
+  recording: MapRecording;
+}
+
+function decodeRecording(raw: RaceRecording): Decoded {
   const binaryStr = atob(raw.framesBase64);
   const bytes = new Uint8Array(binaryStr.length);
   for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
   return {
-    numMarbles: raw.numMarbles,
-    numFrames:  raw.numFrames,
-    frames:     new Float32Array(bytes.buffer),
-    ranking:    raw.ranking,
+    map: raw.map,
+    marbles: raw.marbles,
+    recording: {
+      numMarbles:  raw.numMarbles,
+      numFrames:   raw.numFrames,
+      frames:      new Float32Array(bytes.buffer),
+      finishFrame: raw.finishFrame,
+      ranking:     raw.ranking,
+    },
   };
 }
 
-export default function RaceRoom({ sessionId, mode, seed }: Props) {
+export default function RaceRoom({ sessionId }: Props) {
   const router = useRouter();
 
   const [players,   setPlayers]   = useState<SessionPlayer[] | null>(null);
-  const [recording, setRecording] = useState<DecodedRecording | null>(null);
+  const [race, setRace] = useState<Decoded | null>(null);
   const [myPlayerId, setMyPlayerId] = useState('');
   const [isProjector, setIsProjector] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -68,13 +75,11 @@ export default function RaceRoom({ sessionId, mode, seed }: Props) {
         setPlayers(session.players);
       }),
 
-      mode === '3d'
-        ? fetch(`/api/sessions/${sessionId}/recording`).then(async res => {
-            if (!res.ok) { setError('Race recording not found.'); return; }
-            const raw = (await res.json()) as RaceRecording;
-            setRecording(decodeRecording(raw));
-          })
-        : Promise.resolve(),   // 2D mode doesn't use a recording
+      fetch(`/api/sessions/${sessionId}/recording`).then(async res => {
+        if (!res.ok) { setError('Race recording not found.'); return; }
+        const raw = (await res.json()) as RaceRecording;
+        setRace(decodeRecording(raw));
+      }),
     ]).catch(() => setError('Failed to load race data.'));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
@@ -100,9 +105,9 @@ export default function RaceRoom({ sessionId, mode, seed }: Props) {
     // rematch remount) before the connection finishes establishing
     channel
       .subscribe('game:started', (msg) => {
-        const { mode: newMode, seed: newSeed } = msg.data as { mode: string; seed: number };
+        const { seed: newSeed } = msg.data as { seed: number };
         const proj = new URLSearchParams(window.location.search).has('projector') ? '&projector=true' : '';
-        router.push(`/session/${sessionId}/race?mode=${newMode}&seed=${newSeed}${proj}`);
+        router.push(`/session/${sessionId}/race?seed=${newSeed}${proj}`);
       })
       .catch(() => {});
     return () => {
@@ -131,8 +136,7 @@ export default function RaceRoom({ sessionId, mode, seed }: Props) {
     );
   }
 
-  // For 3D mode wait for both players and recording; for 2D just players
-  const ready = mode === '3d' ? (players && recording) : players;
+  const ready = players && race;
 
   if (!ready) {
     return (
@@ -173,7 +177,7 @@ export default function RaceRoom({ sessionId, mode, seed }: Props) {
     void fetch(`/api/sessions/${sessionId}/start`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ playerId: myPlayerId, mode }),
+      body: JSON.stringify({ playerId: myPlayerId }),
     }).then((res) => {
       if (!res.ok) setRematch('none');
       // On success, game:started drives navigation for everyone
@@ -206,31 +210,14 @@ export default function RaceRoom({ sessionId, mode, seed }: Props) {
     </div>
   );
 
-  if (mode === '3d') {
-    return (
-      <>
-        <MarbleRaceScene
-          players={players!}
-          myPlayerId={myPlayerId}
-          isProjector={isProjector}
-          seed={seed}
-          recording={recording!}
-          onLeave={handleLeave}
-          onRaceAgain={handleRaceAgain}
-          onRaceFinished={handleRaceFinished}
-        />
-        {rematchOverlay}
-      </>
-    );
-  }
-
   return (
     <>
-      <MarbleRace
-        players={players!}
+      <MapRaceScene
+        map={getMap(race!.map)}
+        participants={race!.marbles}
         myPlayerId={myPlayerId}
         isProjector={isProjector}
-        seed={seed}
+        recording={race!.recording}
         onLeave={handleLeave}
         onRaceAgain={handleRaceAgain}
         onRaceFinished={handleRaceFinished}

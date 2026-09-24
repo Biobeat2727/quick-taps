@@ -1,5 +1,9 @@
 /**
- * Server-side marble race simulation using Rapier (Node.js).
+ * ARCHIVED — the original 3D map ("Classic Funnel": plinko → glass tubes →
+ * funnel). Superseded by the streamer-style maps in lib/marble/maps; kept
+ * playable at /marble-classic. Runs in the browser (no Node APIs).
+ *
+ * Marble race simulation using Rapier.
  *
  * Builds an exact copy of the physics world from MarbleRaceScene.tsx and
  * steps it at 60 Hz until all marbles finish (or 2-minute safety cap).
@@ -13,7 +17,7 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import { CatmullRomCurve3, TubeGeometry, CylinderGeometry, Vector3 } from 'three';
 import type { SessionPlayer } from '@/types/session';
-import type { RaceRecording } from '@/types/race';
+import type { ClassicRecording } from '@/types/race';
 
 // ── Seeded PRNG — must match mulberry32 in MarbleRaceScene.tsx ────────────────
 function mulberry32(seed: number) {
@@ -94,10 +98,10 @@ function quatY(angle: number) {
 
 let rapierInited = false;
 
-export async function simulateRace(
+export async function simulateClassicRace(
   players: SessionPlayer[],
   seed: number,
-): Promise<RaceRecording> {
+): Promise<ClassicRecording> {
   if (!rapierInited) {
     await RAPIER.init();
     rapierInited = true;
@@ -328,11 +332,10 @@ export async function simulateRace(
     })
     .map(i => players[i].id);
 
-  // Pack all frames into a single Float32Array and base64-encode for Redis.
+  // Pack all frames into a single Float32Array
   const numFrames = allFrames.length;
   const flat = new Float32Array(numFrames * n * 3);
   for (let f = 0; f < numFrames; f++) flat.set(allFrames[f], f * n * 3);
-  const framesBase64 = Buffer.from(flat.buffer).toString('base64');
 
-  return { numMarbles: n, numFrames, framesBase64, ranking };
+  return { numMarbles: n, numFrames, frames: flat, ranking };
 }

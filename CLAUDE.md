@@ -37,13 +37,13 @@ Sister products:
 ## Games
 | Game | Status | Doc |
 |---|---|---|
-| **Marble Race** | Multiplayer, 2D + 3D modes, server-sim + replay | `docs/Marble_race.md` + section below |
+| **Marble Race** | Multiplayer 3D, streamer-style maps (Neon Summit), chase cam, server-sim + replay | Section below (`docs/Marble_race.md` is the legacy 2D spec) |
 | **Bowling (v2)** | Cosmic-neon, swipe-to-bowl, on-phone physics, multiplayer | `docs/BOWLING_V2.md` |
 | **Pool (v2)** | Neon 7-ft bar box, custom 2D physics, 8-ball rules, NPC bot, multiplayer | `docs/POOL_V2.md` |
 
 Turn-based multiplayer (bowling, pool) shares one match system: `docs/MULTIPLAYER.md`.
 
-**Lab routes (solo, no network — best for iterating):** `/bowl-lab`, `/pool-lab`, `/track-test` (marble 3D).
+**Lab routes (solo, no network — best for iterating):** `/bowl-lab`, `/pool-lab`, `/marble-lab` (current map; `?n=8&seed=…&t=48&projector`), `/marble-classic` (archived original 3D map).
 **Legacy (superseded, safe to delete once confirmed unused):** `/bowl-test`, `/pool-test`, `src/components/game/bowling/*`, `src/components/game/pool/*`, `src/lib/physics/simulate-bowling.ts`, `simulate-pool.ts`, `src/lib/pool/pool-logic.ts`, `src/types/pool.ts`, API routes `start-bowling`, `bowl`, `bowl/recording`, `/api/*-test`, and the lobby's `bowl:started` handler.
 
 ## Key concepts
@@ -56,15 +56,20 @@ Turn-based multiplayer (bowling, pool) shares one match system: `docs/MULTIPLAYE
 ## Marble Race — key file map
 | File | Role |
 |---|---|
-| `components/game/marble-race/MarbleRace.tsx` | 2D mode (canvas, custom physics) |
-| `components/game/marble-race/MarbleRaceScene.tsx` | 3D mode (Three.js replay) |
-| `components/game/marble-race/marble-race-shared.tsx` | Shared types/helpers/UI |
+| `lib/marble/track.ts` | Map system: `Turtle` authoring → banked U-trough trimesh (auto-bank, taller outer walls on turns, gaps, roofs), shared by sim + render |
+| `lib/marble/maps/index.ts` | Map registry (`getMap`, `DEFAULT_MAP_ID`) — add new maps here |
+| `lib/marble/maps/neon-summit.ts` | Neon Summit: Slalom, Pachinko, Wall of Death, Spinner Deck, Plunge/Leap, Helix, Gauntlet, Bobsled, Final Dive |
+| `lib/marble/race-sim-core.ts` | Isomorphic Rapier sim (120 Hz, no CCD): spinners, punchers, bumpers, respawn/anti-stall, 30 Hz recording |
+| `components/game/marble-race/MapRaceScene.tsx` | Renderer: chase cam + map camera zones, name tags, live leaderboard, progress bar |
+| `components/game/marble-race/MarbleLab.tsx` | `/marble-lab`: sims in the browser |
+| `scripts/marble-calibrate.ts` | `npx tsx scripts/marble-calibrate.ts [runs] [marbles]` — race length, speeds, respawns, self-overlap check |
+| `components/game/marble-race/marble-race-shared.tsx` | Shared types/helpers/UI (countdown, results) |
 | `app/session/[id]/session-room.tsx` | Lobby for all games (start buttons, routing on `game:started` / `match:started`) |
-| `app/session/[id]/race/*` | Race room |
-| `app/api/sessions/[id]/start/route.ts` | Starts a race: NPCs if solo, server sim, publishes `game:started {mode, seed}` |
-| `lib/physics/simulate-race.ts` | Server Rapier sim → Float32 recording in Redis |
+| `app/session/[id]/race/*` | Race room — decodes the recording, renders `MapRaceScene` |
+| `app/api/sessions/[id]/start/route.ts` | Starts a race: NPC fill if solo, runs the sim, stores `RaceRecording` (`types/race.ts`) in Redis, publishes `game:started {seed}` |
+| `components/game/marble-race/classic/*`, `lib/marble/classic/*` | **Archived** original 3D map (Classic Funnel) — not in the live game |
 
-Marble architecture: server runs Rapier at 60 Hz, records positions (numFrames × marbles × 3) to Redis; clients replay with a `ReplayDriver` (no client physics). Finish = first frame z ≥ 258. Orthographic camera follows your marble; funnel camera at z ≥ 230; DOM minimap.
+Marble architecture: server runs Rapier at 120 Hz and records `[x, y, z, progress]` per marble at 30 Hz (~420 KB for 6 marbles). The recording carries the map id and the marble list, so every client builds the same course and replays it (no client physics). Moving obstacles are pure functions of race time, so clients animate them in sync. Tuning a map: edit it, run the calibrate script (target winner ~70–90 s, <1 respawn/race, no overlaps), then check `/marble-lab`.
 
 ## Hard-won lessons (read before touching the 3D games)
 - **Never set React state on every pointermove in a game screen.** Re-rendering the R3F tree re-bakes drei `<Environment>` (cube map + PMREM) and froze phones. Paint high-frequency UI straight to the DOM via refs; keep scenes `memo`'d with stable props; build `<Environment>` once in a `useMemo`.

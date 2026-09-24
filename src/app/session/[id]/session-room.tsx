@@ -33,7 +33,6 @@ export default function SessionRoom({ sessionId }: { sessionId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [starting, setStarting] = useState(false);
-  const [pickingMode, setPickingMode] = useState(false);
   const playerInfoRef = useRef<PlayerInfo | null>(null);
 
   const fetchSession = useCallback(async () => {
@@ -84,8 +83,8 @@ export default function SessionRoom({ sessionId }: { sessionId: string }) {
         void fetchSession();
       }
       if (msg.name === "game:started") {
-        const { mode, seed } = msg.data as { sessionId: string; mode: string; seed: number };
-        router.push(`/session/${sessionId}/race?mode=${mode}&seed=${seed}`);
+        const { seed } = msg.data as { sessionId: string; seed: number };
+        router.push(`/session/${sessionId}/race?seed=${seed}`);
       }
       if (msg.name === "bowl:started") {
         router.push(`/session/${sessionId}/bowling`);
@@ -157,21 +156,20 @@ export default function SessionRoom({ sessionId }: { sessionId: string }) {
     }
   }
 
-  async function handleStartWithMode(mode: '2d' | '3d') {
+  async function handleStartRace() {
     if (!playerInfo) return;
-    setPickingMode(false);
     setStarting(true);
     try {
       const res = await fetch(`/api/sessions/${sessionId}/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerId: playerInfo.playerId, mode }),
+        body: JSON.stringify({ playerId: playerInfo.playerId }),
       });
       if (!res.ok) {
         setStarting(false);
         setError("Couldn't start the race. Try again.");
       }
-      // game:started Ably message (with mode) drives the transition for all players
+      // game:started Ably message drives the transition for all players
     } catch {
       setStarting(false);
       setError("Couldn't start the race. Try again.");
@@ -306,10 +304,10 @@ export default function SessionRoom({ sessionId }: { sessionId: string }) {
                 </p>
               )}
             </>
-          ) : !pickingMode ? (
+          ) : (
             <>
               <button
-                onClick={() => setPickingMode(true)}
+                onClick={() => void handleStartRace()}
                 disabled={starting}
                 className="btn-amber w-full rounded-2xl py-4 text-lg font-bold uppercase tracking-wide active:scale-95 transition-transform disabled:opacity-50"
               >
@@ -321,32 +319,6 @@ export default function SessionRoom({ sessionId }: { sessionId: string }) {
                 </p>
               )}
             </>
-          ) : (
-            <div className="flex flex-col gap-3">
-              <p className="text-center text-[11px] tracking-[0.3em] uppercase text-[var(--qt-mute)]">
-                Choose a view
-              </p>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => void handleStartWithMode('2d')}
-                  className="btn-amber flex-1 rounded-2xl py-5 font-bold text-base uppercase tracking-wide active:scale-95 transition-transform"
-                >
-                  2D Classic
-                </button>
-                <button
-                  onClick={() => void handleStartWithMode('3d')}
-                  className="flex-1 rounded-2xl py-5 bg-[var(--qt-panel-2)] text-[var(--qt-cream)] font-bold text-base uppercase tracking-wide border border-[var(--qt-line)] active:scale-95 active:border-[var(--qt-amber)] transition-transform"
-                >
-                  3D
-                </button>
-              </div>
-              <button
-                onClick={() => setPickingMode(false)}
-                className="text-center text-xs text-[var(--qt-mute)] py-1 active:text-[var(--qt-cream)]"
-              >
-                Cancel
-              </button>
-            </div>
           )}
         </div>
       )}

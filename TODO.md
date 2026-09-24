@@ -3,7 +3,7 @@
 _Last updated 2026-09-24._
 
 ## Current state
-- **Marble Race** — multiplayer, 2D + 3D, NPC fill, rematch. Neon theme. (Stable.)
+- **Marble Race** — multiplayer 3D on the new streamer-style map system (Neon Summit: pachinko, spinners, jumps, helix, boxing-glove gauntlet), chase cam, NPC fill, rematch. 2D removed; original 3D map archived at `/marble-classic`.
 - **Bowling v2** — cosmic neon, swipe-to-bowl, on-phone Rapier, calibrated pin carry, multiplayer up to 6. `docs/BOWLING_V2.md`
 - **Pool v2** — neon 7-ft bar box, custom 2D physics (spin, english, jaws), 8-ball rules, NPC bot, spin picker, multiplayer (2). `docs/POOL_V2.md`
 - **Turn-based match system** shared by bowling + pool. `docs/MULTIPLAYER.md`
@@ -26,6 +26,7 @@ _Last updated 2026-09-24._
 6. **At-the-bar gating** (rotating QR token or geofence) — needed before a second bar.
 
 ## Polish backlog
+- Marble: more maps (registry in `lib/marble/maps`; pick per race or let the host choose); bigger fields (8–12 marbles); recording is ~70 KB/marble — quantize to Int16 if Redis size becomes an issue.
 - Pool: show the remote player's cue swing/aim before their shot plays; optional house rule "sinking opponent's ball ends turn"; bot difficulty option; casual bot fouls a lot (~4/game).
 - Bowling: straight centre hits strike a bit too easily; split detection callouts; pinsetter sweep animation instead of pins snapping back; turkey/double callouts.
 - Both: lobby still says "Waiting for players" styling from marble era — fine, but could show game-specific copy.
