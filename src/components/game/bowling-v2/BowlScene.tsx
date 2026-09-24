@@ -324,15 +324,19 @@ function SceneContents({ tier, fx, ...props }: SceneProps & { tier: number; fx: 
   const shadowTex = blobShadowTexture();
   const trailColor = useMemo(() => new THREE.Color(1.5, 0.35, 1.8), []);
   const caOffset = useMemo(() => new THREE.Vector2(0, 0), []);
-
-  return (
-    <>
-      {fx.env && <Environment resolution={128} frames={1} environmentIntensity={0.55}>
+  // Built once: re-rendering <Environment> re-bakes its cube map on the GPU.
+  const environment = useMemo(() => (
+    <Environment resolution={128} frames={1} environmentIntensity={0.55}>
         <Lightformer form="rect" intensity={3} color="#ff3fd0" position={[0, 4, 8]} rotation-x={Math.PI / 2} scale={[6, 1, 1]} />
         <Lightformer form="rect" intensity={2.5} color="#3ff2ff" position={[-4, 1.5, 6]} rotation-y={Math.PI / 2} scale={[8, 1, 1]} />
         <Lightformer form="rect" intensity={2} color="#b44bff" position={[4, 1.5, 6]} rotation-y={-Math.PI / 2} scale={[8, 1, 1]} />
         <Lightformer form="ring" intensity={2} color="#ffb424" position={[0, 2, -4]} scale={1.5} />
-      </Environment>}
+      </Environment>
+  ), []);
+
+  return (
+    <>
+      {fx.env && environment}
 
       <CosmicAlley chaseRef={chaseRef} tier={tier} fx={fx} />
 
