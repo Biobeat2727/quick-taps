@@ -1,3 +1,5 @@
+> **Legacy.** This describes the original server-sim version (still behind `/bowl-test`). The live game is v2 — see `docs/BOWLING_V2.md` and `docs/MULTIPLAYER.md`.
+
 # Bowling Game — Implementation Phases
 
 ## Overview

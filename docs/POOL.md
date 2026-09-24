@@ -1,3 +1,5 @@
+> **Legacy.** This describes the original server-sim version (still behind `/pool-test`). The live game is v2 — see `docs/POOL_V2.md` and `docs/MULTIPLAYER.md`.
+
 # Pool Game — Implementation Phases
 
 ## Overview

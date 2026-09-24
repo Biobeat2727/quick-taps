@@ -1,7 +1,7 @@
-# AGENTS.md — Quick Taps
+# AGENTS.md — Quick Taps (mirror of CLAUDE.md — keep in sync)
 
 ## What is this?
-Quick Taps is an always-on bar mini game suite, the third pillar in a suite of bar entertainment products built for IPA (a bar in Coeur d'Alene, ID). It lives at its own URL and requires no host or scheduled game night — players scan a QR code, pick a name, choose a game, and either join an open session or start their own.
+Quick Taps is an always-on bar mini game suite, the third pillar in a suite of bar entertainment products (pilot bar: IPA, Coeur d'Alene, ID — but keep the app bar-agnostic: no bar branding in code). Players scan a QR code, pick a name, choose a game, and either join an open table or start their own. Long-term vision: a licensed in-bar digital arcade / social game layer on your phone.
 
 Sister products:
 - **Tapped In!** — hosted Jeopardy-style trivia
@@ -9,76 +9,76 @@ Sister products:
 
 ## How to orient at the start of a session
 1. Read this file
-2. Run `git log --oneline -10`
-3. Run `find . -type f -name "*.ts" -o -name "*.tsx" | grep -v node_modules | grep -v .next | head -40`
-4. Read TODO.md for current session goals
-5. Do not read individual source files unless a task requires it
+2. `git log --oneline -10`
+3. Read `TODO.md` for current status and next steps
+4. Read the relevant game doc in `docs/` only if the task touches that game
+5. Don't read individual source files unless a task requires it
 
-## Git repo note
-The git root is `C:/Users/davey` (NOT `C:/Users/davey/quick-taps`). quick-taps is a subdirectory of a parent monorepo. Always `cd` into quick-taps before running git, and use `quick-taps/src/...` paths when staging. Use `git rev-parse --show-toplevel` to confirm.
+## Git / deploy
+- The git root **is** `quick-taps/` (it used to be a subfolder of `C:/Users/davey` — that's no longer true). Remote: `github.com/Biobeat2727/quick-taps`, branch `main`.
+- Vercel auto-deploys on push to `main`. Production: https://quick-taps.vercel.app
+- Vercel project settings: Root Directory must be **blank** (repo root). Recommended Function Region: Portland `pdx1`, with Redis in Oregon `us-west-2` (colocate functions + Redis).
+- Don't commit `.claude/settings.local.json` or the `public/Neon_sign/` line-ending noise.
 
 ## Tech stack
-- **Framework**: Next.js 15, TypeScript, App Router
-- **Styling**: Tailwind CSS, shadcn/ui, Framer Motion
+- **Framework**: Next.js 16 (App Router), React 19, TypeScript
+- **Styling**: Tailwind v4 — "back-bar neon" theme tokens in `src/app/globals.css` (Bungee display font, amber/ice/magenta neon on near-black violet)
+- **3D**: three.js + @react-three/fiber + drei + @react-three/postprocessing
+- **Physics**: Rapier (`@dimforge/rapier3d-compat`) for bowling & marble race; a custom 2D engine for pool
 - **Realtime**: Ably (shared app with What's on Tap?)
-- **Database**: Neon (PostgreSQL, shared with What's on Tap? — Quick Taps tables prefixed with `qt_`)
-- **Ephemeral state**: Upstash Redis (shared)
-- **Deployment**: Vercel (auto-deploys on push to main)
+- **Ephemeral state**: Upstash Redis — see "Redis" below
+- **DB**: Neon Postgres via Prisma (`qt_` tables; `QtScore` exists but nothing writes to it yet)
+
+## Redis (important)
+- The original Upstash DB was deleted (found 2026-09-23). Production needs a new one: Vercel → Storage → Upstash Redis (Oregon), then **delete the old `UPSTASH_REDIS_REST_*` env vars** in Vercel (they override) and redeploy. `src/lib/redis/client.ts` accepts either `UPSTASH_REDIS_REST_URL/TOKEN` or Vercel's `KV_REST_API_URL/TOKEN`.
+- Local dev: `QT_MEMORY_REDIS=1` in git-ignored `.env.development.local` swaps in an in-process Redis stand-in (dev only). Delete that file to hit real Redis locally.
+- Ably is still the live shared app — local test tables publish there.
+
+## Games
+| Game | Status | Doc |
+|---|---|---|
+| **Marble Race** | Multiplayer, 2D + 3D modes, server-sim + replay | `docs/Marble_race.md` + section below |
+| **Bowling (v2)** | Cosmic-neon, swipe-to-bowl, on-phone physics, multiplayer | `docs/BOWLING_V2.md` |
+| **Pool (v2)** | Neon 7-ft bar box, custom 2D physics, 8-ball rules, NPC bot, multiplayer | `docs/POOL_V2.md` |
+
+Turn-based multiplayer (bowling, pool) shares one match system: `docs/MULTIPLAYER.md`.
+
+**Lab routes (solo, no network — best for iterating):** `/bowl-lab`, `/pool-lab`, `/track-test` (marble 3D).
+**Legacy (superseded, safe to delete once confirmed unused):** `/bowl-test`, `/pool-test`, `src/components/game/bowling/*`, `src/components/game/pool/*`, `src/lib/physics/simulate-bowling.ts`, `simulate-pool.ts`, `src/lib/pool/pool-logic.ts`, `src/types/pool.ts`, API routes `start-bowling`, `bowl`, `bowl/recording`, `/api/*-test`, and the lobby's `bowl:started` handler.
 
 ## Key concepts
-- No host role — the first player to create a session is just a player
-- Sessions are open and discoverable via a session list (the home screen)
-- Player names are persisted on-device (localStorage) so returning players skip the name step
-- NPC fallback — if a player is alone, named NPC marbles fill the field
-- Games are self-contained modules — each game has its own spec doc
-
-## Repo structure (intended)
-- `app/` — Next.js App Router pages
-- `components/` — shared UI components
-- `lib/` — shared utilities, Ably client, Prisma client
-- `prisma/` — schema
-- `docs/` — ARCHITECTURE.md, game specs
-
-## Current games
-- **Marble Race** — see docs/MARBLE_RACE.md
-  - Has both a **2D** (canvas + custom JS physics via `useMarblePhysics`) and **3D** (Three.js + Rapier via `@react-three/rapier`) mode
-  - **Mode is chosen by the host in the lobby** (`session-room.tsx`) before starting — NOT in the race room
-  - When host clicks Start Race → picks 2D or 3D → API publishes `game:started` with `{ mode, seed }` → all clients navigate to `/race?mode=X&seed=N`
-  - Shared UI/helpers live in `marble-race-shared.tsx` (imported by both modes)
+- No host role beyond "first human starts the game / rematches"
+- Tables are open and listed on the home screen; player identity is per-table in `localStorage` (`qt:player:{sessionId}`), name in `localStorage`
+- Marble Race asks for a marble colour; other games auto-assign a free colour (it's the scorecard dot)
+- Solo fallback: NPC marbles (race), NPC opponent (pool). Bowling solo is just single-player.
+- Session statuses: `lobby` | `racing` (marble) | `playing` (turn-based match). Joining is blocked while racing/playing; pool caps at 2 humans, bowling 6.
 
 ## Marble Race — key file map
 | File | Role |
 |---|---|
 | `components/game/marble-race/MarbleRace.tsx` | 2D mode (canvas, custom physics) |
-| `components/game/marble-race/MarbleRaceScene.tsx` | 3D mode (Three.js/Rapier) |
-| `components/game/marble-race/marble-race-shared.tsx` | Shared types, helpers, UI components (`Participant`, `Phase`, `buildParticipants`, `CountdownOverlay`, `ResultsScreen`) |
-| `components/game/marble-race/useMarblePhysics.ts` | 2D physics hook |
-| `components/game/marble-race/Track.tsx` | 2D SVG track |
-| `app/session/[id]/session-room.tsx` | Lobby: player list, color picker, host-only Start Race + 2D/3D picker |
-| `app/session/[id]/race/page.tsx` | Server component: reads `?mode` and `?seed` searchParams, passes to RaceRoom |
-| `app/session/[id]/race/race-room.tsx` | Client component: fetches session players, mounts correct scene |
-| `app/api/sessions/[id]/start/route.ts` | POST: validates host, adds NPCs if solo, publishes `game:started` with mode+seed |
-| `lib/ably/channels.ts` | Channel/message type definitions |
-| `app/track-test/page.tsx` | Dev sandbox — runs 3D scene with mock player |
+| `components/game/marble-race/MarbleRaceScene.tsx` | 3D mode (Three.js replay) |
+| `components/game/marble-race/marble-race-shared.tsx` | Shared types/helpers/UI |
+| `app/session/[id]/session-room.tsx` | Lobby for all games (start buttons, routing on `game:started` / `match:started`) |
+| `app/session/[id]/race/*` | Race room |
+| `app/api/sessions/[id]/start/route.ts` | Starts a race: NPCs if solo, server sim, publishes `game:started {mode, seed}` |
+| `lib/physics/simulate-race.ts` | Server Rapier sim → Float32 recording in Redis |
 
-## Multiplayer architecture — server simulation + client replay
-The server runs the full Rapier physics simulation and streams a compact recording to clients. No physics runs on the client.
+Marble architecture: server runs Rapier at 60 Hz, records positions (numFrames × marbles × 3) to Redis; clients replay with a `ReplayDriver` (no client physics). Finish = first frame z ≥ 258. Orthographic camera follows your marble; funnel camera at z ≥ 230; DOM minimap.
 
-1. **Simulation**: `lib/physics/simulate-race.ts` — runs Rapier at 60 Hz server-side, records all marble positions as a flat `Float32Array` (numFrames × numMarbles × 3), base64-encodes to Redis.
-2. **Seed**: `start/route.ts` generates `raceSeed`, passes to `simulateRace()`. PRNG `mulberry32(seed)` for start positions, `mulberry32(seed+1)` for impulses.
-3. **Recording format**: `{ numMarbles, numFrames, framesBase64, ranking }` — `ranking` is derived post-hoc by scanning frames for first frame each marble's z≥258.
-4. **Replay**: `ReplayDriver` component inside the Canvas accumulates real elapsed time, maps to a target frame index, and updates Three.js mesh positions directly (no React state). Frame 0 is the pre-impulse rest pose shown during countdown.
-5. **Race end**: Client ends the race as soon as all marble burst animations have fired (all marbles visually crossed z=258), not when the recording runs out. Falls back to recording end for marbles that never exit.
-6. **Safety cap**: `MAX_FRAMES = 3600` (1 min at 60 Hz).
+## Hard-won lessons (read before touching the 3D games)
+- **Never set React state on every pointermove in a game screen.** Re-rendering the R3F tree re-bakes drei `<Environment>` (cube map + PMREM) and froze phones. Paint high-frequency UI straight to the DOM via refs; keep scenes `memo`'d with stable props; build `<Environment>` once in a `useMemo`.
+- **Camera orientation:** both lanes/tables are viewed looking down +Z, so **screen-right is world −X**. Input code mirrors X/spin accordingly.
+- **drei `<Sparkles>` flickered badly on phones** (mediump shader + bloom). Pool/bowling use custom highp point shaders.
+- **Bloom bleeds from thin bright emissives** (rail neon, diamonds) — keep idle emissives under the threshold and flash on events.
+- Phones: no MSAA (`pointer: coarse`), fixed quality tier per load (never switch tiers mid-game — rebuilding render targets flickers / loses the GPU context), dispose GPU resources on unmount, handle `webglcontextlost`.
+- `setPointerCapture` can throw — wrap it.
+- Keep game physics/rules pure and isomorphic (`lib/*/…-core.ts`, `…-rules.ts`) so they run on the phone, on the server, and in offline calibration scripts (`npx tsx`).
 
-## 3D scene notes
-- Orthographic camera, `zoom: 12` (track fills screen width)
-- `CameraRig` lerps camera Z to follow player's marble; projector mode stays at z=130 overview
-- **Funnel camera**: when marble enters funnel (`z >= 230`), camera sweeps to head-on view (`pos=[0,0,225]`, looking along +Z into funnel mouth). Dynamic zoom: `5 + 3*(1 - r/20)` wide at rim, tight at center. `camera.near=0.1` prevents geometry clipping.
-- Track: **Act 1** peg grid + bumpers (z=−10–65), back wall at z=−13 seals entry. **Act 2** glass tubes (z=87–222). **Act 3** funnel (z=230–258, tip radius=2, catch floor z=263).
-- Finish: first frame marble z≥258. Escaped marbles (entered funnel then `z<218` or `|x|>50` or `|y|>50`) or OOB marbles are marked done in simulation but ranked last by max-z reached.
-- Burst ring animation fires via `onMarbleFinish` callback when each marble first passes z=258 in the replay.
-- **Minimap**: DOM overlay on left side (28×240 px), updates marble dot positions each frame via `dotRefs` (no setState). Constants: `MM_H=240`, `MM_Z_MIN=−10`, `MM_Z_MAX=258`. Shows act section colour bands + yellow finish line.
+## Testing on a phone (dev)
+- Dev server listens on the LAN; `next.config.ts` has `allowedDevOrigins` for the PC's LAN IP (currently `192.168.4.27` — update if it changes). Open `http://<ip>:3000/pool-lab` etc.; generate a QR with `npx qrcode`.
+- Don't leave a phone tab open during heavy live edits — repeated HMR remounts of the WebGL scene can lock mobile Chrome.
+- Two-player local test: two browser origins (`localhost` + LAN IP) have separate `localStorage`, so they act as two players.
 
 ## Environment variables
-See `.env.local` (not committed). Uses same Ably and Neon credentials as What's on Tap?
+See `.env.local` (not committed): Ably key(s), Neon `DATABASE_URL`, Upstash Redis URL/token (or Vercel KV names), `NEXT_PUBLIC_APP_URL`.

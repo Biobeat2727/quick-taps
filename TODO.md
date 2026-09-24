@@ -1,52 +1,35 @@
 # TODO — Quick Taps
 
-## Done: Session 1 — Scaffold
-- [x] Repo structure, config files, package.json
-- [x] Prisma + Ably + Redis lib setup
-- [x] App pages (stubs): `/`, `/name`, `/session/[id]`
-- [x] API routes: sessions CRUD, join, leave, Ably token
+_Last updated 2026-09-24._
 
-## Done: Session 2 — Session List UI
-- [x] `/name` — name entry, saves to localStorage, auto-skips if already set
-- [x] `/` — session list with live Ably subscription (`qt:sessions`)
-- [x] Color picker bottom sheet (claimed colors grayed out)
-- [x] "Start a game" → create session + redirect to `/session/[id]`
-- [x] "Join" → join session + redirect to `/session/[id]`
-- [x] `src/lib/constants.ts` — marble colors, NPC names, game labels
-- [x] Ably token route made sessionId optional (home page uses browse-only token)
+## Current state
+- **Marble Race** — multiplayer, 2D + 3D, NPC fill, rematch. Neon theme. (Stable.)
+- **Bowling v2** — cosmic neon, swipe-to-bowl, on-phone Rapier, calibrated pin carry, multiplayer up to 6. `docs/BOWLING_V2.md`
+- **Pool v2** — neon 7-ft bar box, custom 2D physics (spin, english, jaws), 8-ball rules, NPC bot, spin picker, multiplayer (2). `docs/POOL_V2.md`
+- **Turn-based match system** shared by bowling + pool. `docs/MULTIPLAYER.md`
+- Home picker: Pool / Bowling / Marble Race. Non-marble games auto-assign a colour (no marble picker).
+- Deployed from `main` to https://quick-taps.vercel.app (Vercel Root Directory fixed to repo root).
 
-## Done: Session 3 — Session Room (`/session/[id]`)
-- [x] Waiting room: show joined players + their colors
-- [x] Color picker (8 options, claimed colors grayed out) — also allows color change in waiting room
-- [x] Subscribe to `qt:session:{id}` for live player join/leave
-- [x] "Start race" button for session creator
-- [x] NPC fill logic when starting solo (fills to 6 with NPC_NAMES)
-- [x] Heartbeat: ping PATCH /api/sessions/[id]/heartbeat every 60s to refresh Redis TTL while player is in waiting room
-- [x] PATCH /api/sessions/[id]/color — change player color in waiting room
-- [x] POST /api/sessions/[id]/start — starts race, fills NPCs, publishes game:started
-- [x] Leave on tab close via sendBeacon; explicit Leave button
+## ⚠️ Blocking production (Davey — account actions)
+- [ ] Create a new Redis DB: Vercel → Storage → Upstash Redis, region **Oregon (us-west-2)**, connect to the project
+- [ ] Delete the old `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` env vars in Vercel (they point at the deleted DB and override the new `KV_REST_API_*`)
+- [ ] Vercel → Settings → Functions → Function Region → **Portland (pdx1)**
+- [ ] Redeploy; then check `GET /api/sessions` returns 200 on production
+- [ ] Locally: update `.env.local` with the new Redis values and delete `.env.development.local` (it forces the in-memory dev Redis)
 
-## Session 4 — Track Rendering (static, no physics)
-- [ ] Create `src/components/game/marble-race/Track.tsx` — canvas component, 390×2800px
-- [ ] Render Act 1: plinko field — channel walls (x=40, x=350), staggered peg grid (8 rows, alternating 5/4 pegs, 60px horizontal spacing, 80px vertical spacing, starting y=80), pegs radius 6px
-- [ ] Render Act 2: four bezier lane paths — lanes at x=80,160,230,310 at entry (y=800), three crossing zones as described in MARBLE_RACE.md
-- [ ] Render Act 3: funnel — outer circle (center x=195 y=2200 r=140), inner hole (r=20), entry chute converging from lanes, exit chute to y=2800
-- [ ] Finish line rendered at y=2750
-- [ ] Track is a static pre-rendered canvas layer — no animation yet
-- [ ] Verify full track looks correct in browser at 390px width before moving on
+## Next up (suggested order)
+1. **Turn timer / AFK handling** for bowling + pool — a player who walks off without leaving stalls the match (e.g. 45 s shot clock, then auto-skip / concede; host can kick).
+2. **Sound** for both games — ball roll/clicks, break crack, pocket drops, pin crash, strike sting. WebAudio, respect a mute toggle.
+3. **Scores + nightly leaderboard** — nothing writes `QtScore` yet. Add a venue id to every score now so multi-bar licensing doesn't need a backfill.
+4. **"At the bar now" presence** on the home screen (Ably presence) + tap-to-challenge.
+5. **Legacy cleanup** — delete old bowling/pool code & routes (list in CLAUDE.md "Legacy"), the lobby's `bowl:started` handler, and `public/Neon_sign/` (a whole Vite project inside `public/`).
+6. **At-the-bar gating** (rotating QR token or geofence) — needed before a second bar.
 
-## Session 5 — Marble Physics
-- [ ] Create `src/components/game/marble-race/useMarblePhysics.ts` — physics hook
-- [ ] Implement per-marble state: position (x,y), velocity (vx,vy), current act, speedMod (0.88–1.12, fixed at race start)
-- [ ] Act 1 physics: gravity (0.3px/frame²), peg collision with reflection + random lateral impulse (±2px), wall bounce with damping 0.6, max velocity 12px/frame
-- [ ] Act 2 physics: assign marble to lane by entry x position, t-parameter interpolation along bezier lane path, elastic marble-marble collision within lanes
-- [ ] Act 3 physics: centripetal force toward funnel center (a = v²/r), tangential entry velocity based on entry x, exit when r < 20px, record exit order as final placement
-- [ ] NPC marbles included in physics loop — identical treatment to real players
-- [ ] Render marbles on a second canvas layer on top of the static track
+## Polish backlog
+- Pool: show the remote player's cue swing/aim before their shot plays; optional house rule "sinking opponent's ball ends turn"; bot difficulty option; casual bot fouls a lot (~4/game).
+- Bowling: straight centre hits strike a bit too easily; split detection callouts; pinsetter sweep animation instead of pins snapping back; turkey/double callouts.
+- Both: lobby still says "Waiting for players" styling from marble era — fine, but could show game-specific copy.
+- Session TTL is 10 min idle (heartbeat keeps it alive); match TTL 30 min.
 
-## Session 6 — Views + Results
-- [ ] Phone follow-cam: viewport 390×844px, camera lerps to player marble at 40% from top (smoothing 0.08), player marble has pulsing ring, current placement shown top-right
-- [ ] Projector view (?projector=true): full track scaled to fit screen, all marbles visible, player name labels, live leaderboard sidebar
-- [ ] Results screen: podium layout (2nd left, 1st center, 3rd right), full ranked list below, "Race again" and "Leave" buttons
-- [ ] Wire game:started event → transition from waiting room to race canvas
-- [ ] Wire race finish → transition to results screen
+## Deferred (by decision)
+- Player profiles (see memory: vision) — not yet.
