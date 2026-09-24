@@ -7,6 +7,7 @@ import {
 import { ablyRest } from "@/lib/ably/server";
 import { CHANNELS } from "@/lib/ably/channels";
 import { z } from "zod";
+import { getMatch, setMatch, dropPlayer } from "@/lib/match/match-server";
 
 const LeaveSchema = z.object({
   playerId: z.string().min(1),
@@ -39,6 +40,17 @@ export async function POST(
   await sessionChannel.publish("player:left", { playerId });
 
   session.players = session.players.filter((p) => p.id !== playerId);
+
+  // Walking out mid-match: pool concedes, bowling skips them in the rotation
+  const match = await getMatch(id);
+  if (match) {
+    const next = dropPlayer(match, playerId);
+    if (next) {
+      await setMatch(id, next);
+      if (next.over) session.status = "lobby";
+      await sessionChannel.publish("match:update", { match: next, reason: "left" });
+    }
+  }
 
   // NPCs don't hold a table open — delete once the last human leaves
   const humansRemain = session.players.some((p) => !p.isNpc);

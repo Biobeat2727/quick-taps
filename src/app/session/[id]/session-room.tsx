@@ -49,6 +49,13 @@ export default function SessionRoom({ sessionId }: { sessionId: string }) {
     }
   }, [sessionId, router]);
 
+  // A match is already running at this table and I'm in it → straight back in
+  useEffect(() => {
+    if (!session || !playerInfo || session.status !== "playing") return;
+    if (session.game !== "bowling" && session.game !== "pool") return;
+    if (session.players.some((p) => p.id === playerInfo.playerId)) router.replace(`/session/${sessionId}/${session.game}`);
+  }, [session, playerInfo, sessionId, router]);
+
   // Init: read localStorage, redirect if no player info
   useEffect(() => {
     const info = getPlayerInfo(sessionId);
@@ -82,6 +89,10 @@ export default function SessionRoom({ sessionId }: { sessionId: string }) {
       }
       if (msg.name === "bowl:started") {
         router.push(`/session/${sessionId}/bowling`);
+      }
+      if (msg.name === "match:started") {
+        const { game } = msg.data as { game: string };
+        router.push(`/session/${sessionId}/${game}`);
       }
     });
     return () => {
@@ -126,23 +137,23 @@ export default function SessionRoom({ sessionId }: { sessionId: string }) {
     router.push("/");
   }
 
-  async function handleStartBowling() {
+  async function handleStartMatch() {
     if (!playerInfo) return;
     setStarting(true);
     try {
-      const res = await fetch(`/api/sessions/${sessionId}/start-bowling`, {
+      const res = await fetch(`/api/sessions/${sessionId}/match/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ playerId: playerInfo.playerId }),
       });
       if (!res.ok) {
         setStarting(false);
-        setError("Couldn't start bowling. Try again.");
+        setError("Couldn't start the game. Try again.");
       }
-      // bowl:started Ably message drives the transition for all players
+      // match:started Ably message drives the transition for everyone
     } catch {
       setStarting(false);
-      setError("Couldn't start bowling. Try again.");
+      setError("Couldn't start the game. Try again.");
     }
   }
 
@@ -280,14 +291,21 @@ export default function SessionRoom({ sessionId }: { sessionId: string }) {
       {/* Start game — creator only */}
       {isCreator && (
         <div className="px-4 py-4 border-t border-[var(--qt-line)]">
-          {session.game === "bowling" ? (
-            <button
-              onClick={() => void handleStartBowling()}
-              disabled={starting}
-              className="btn-amber w-full rounded-2xl py-4 text-lg font-bold uppercase tracking-wide active:scale-95 transition-transform disabled:opacity-50"
-            >
-              {starting ? "Starting…" : "Start Bowling"}
-            </button>
+          {session.game === "bowling" || session.game === "pool" ? (
+            <>
+              <button
+                onClick={() => void handleStartMatch()}
+                disabled={starting}
+                className="btn-amber w-full rounded-2xl py-4 text-lg font-bold uppercase tracking-wide active:scale-95 transition-transform disabled:opacity-50"
+              >
+                {starting ? "Starting…" : session.game === "pool" ? "Rack 'em" : "Start Bowling"}
+              </button>
+              {session.game === "pool" && session.players.filter((p) => !p.isNpc).length === 1 && (
+                <p className="text-center text-xs text-[var(--qt-mute)] mt-2">
+                  Solo? A regular will play you.
+                </p>
+              )}
+            </>
           ) : !pickingMode ? (
             <>
               <button
@@ -346,7 +364,7 @@ export default function SessionRoom({ sessionId }: { sessionId: string }) {
       {starting && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(12,10,20,0.9)]">
           <span className="neon-sign text-2xl animate-pulse">
-            {session.game === "bowling" ? "Bowling starting…" : "Race starting…"}
+            {session.game === "bowling" ? "Bowling starting…" : session.game === "pool" ? "Racking up…" : "Race starting…"}
           </span>
         </div>
       )}

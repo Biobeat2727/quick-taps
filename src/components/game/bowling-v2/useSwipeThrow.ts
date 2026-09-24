@@ -72,7 +72,7 @@ export function useSwipeThrow(
 
     const onDown = (e: PointerEvent) => {
       down = true;
-      node.setPointerCapture(e.pointerId);
+      try { node.setPointerCapture(e.pointerId); } catch {}
       const p = pt(e);
       pts = [p];
       lockIdx = -1;

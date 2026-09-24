@@ -1,4 +1,4 @@
-export type GameId = "marble_race" | "bowling";
+export type GameId = "marble_race" | "bowling" | "pool";
 
 export interface SessionPlayer {
   id: string;
@@ -14,5 +14,5 @@ export interface Session {
   lastActivity: number; // unix ms
   players: SessionPlayer[];
   // Absent on sessions created before this field existed — treat as "lobby"
-  status?: "lobby" | "racing";
+  status?: "lobby" | "racing" | "playing";
 }

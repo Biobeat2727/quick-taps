@@ -21,4 +21,5 @@ export const NPC_NAMES = [
 export const GAME_LABELS: Record<string, string> = {
   marble_race: "Marble Race",
   bowling: "Bowling",
+  pool: "Pool",
 };

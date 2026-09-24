@@ -257,8 +257,10 @@ function SessionCard({
   session: Session;
   onJoin: () => void;
 }) {
-  const racing = session.status === "racing";
-  const full = session.players.length >= 6;
+  const live = session.status === "racing" || session.status === "playing";
+  const cap = session.game === "pool" ? 2 : 6;
+  const humans = session.players.filter((p) => !p.isNpc).length;
+  const full = humans >= cap;
   const host = session.players[0];
 
   return (
@@ -285,14 +287,14 @@ function SessionCard({
             />
           ))}
           <span className="text-xs text-[var(--qt-mute)] ml-1">
-            {session.players.length}/6
+            {humans}/{cap}
           </span>
         </div>
       </div>
-      {racing ? (
+      {live ? (
         <span className="flex-shrink-0 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-[var(--qt-ice)]">
           <span className="live-dot w-2 h-2 rounded-full" />
-          Racing
+          {session.status === "racing" ? "Racing" : "Playing"}
         </span>
       ) : (
         <button
@@ -317,6 +319,7 @@ function GamePickerSheet({
   onCancel: () => void;
 }) {
   const games: { id: GameId; label: string; description: string }[] = [
+    { id: "pool", label: "Pool", description: "8-ball on a neon bar table" },
     { id: "bowling", label: "Bowling", description: "10-frame turn-based bowling" },
     { id: "marble_race", label: "Marble Race", description: "Physics marble race to the bottom" },
   ];

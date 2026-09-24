@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { BALL_RADIUS } from '@/lib/bowling/bowling-constants';
 import { makePinTextures, makeBallTextures } from './textures';
 
-const PIN_Y0 = -0.191, PIN_Y1 = 0.191;
+const PIN_Y0 = -0.191;
 
 // Visual pin silhouette — [radius, y] from base to crown, USBC proportions
 // (15" tall, 4.77" belly at 4.5", 1.80" neck at 10", 2.55" head at 13.5").

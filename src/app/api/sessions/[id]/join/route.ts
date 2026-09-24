@@ -4,6 +4,8 @@ import { ablyRest } from "@/lib/ably/server";
 import { CHANNELS } from "@/lib/ably/channels";
 import { z } from "zod";
 
+const MAX_PLAYERS_BY_GAME: Record<string, number> = { marble_race: 8, bowling: 6, pool: 2 };
+
 const JoinSchema = z.object({
   playerName: z.string().min(1).max(32),
   playerColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
@@ -32,8 +34,12 @@ export async function POST(
   const { playerName, playerColor } = parsed.data;
 
   // 409 is reserved for color conflicts (client re-opens the picker on it)
-  if (session.status === "racing") {
-    return Response.json({ error: "Race in progress" }, { status: 403 });
+  if (session.status === "racing" || session.status === "playing") {
+    return Response.json({ error: "Game in progress" }, { status: 403 });
+  }
+  const humans = session.players.filter((p) => !p.isNpc).length;
+  if (humans >= MAX_PLAYERS_BY_GAME[session.game]) {
+    return Response.json({ error: "Table is full" }, { status: 403 });
   }
 
   if (session.players.some((p) => p.color === playerColor)) {
