@@ -14,7 +14,8 @@ const ME = 0, BOT = 1;
 const BOT_SKILL = 0.6;
 const TOP_INSET = 58;         // px kept clear above the table (player chips)
 const BOTTOM_INSET = 156;     // px kept clear below it (spin, fine aim, slide-to-shoot)
-const INSETS = { top: TOP_INSET, bottom: BOTTOM_INSET };
+const TRAY_W = 24;             // px gutter on the left for the pocketed-ball return
+const INSETS = { top: TOP_INSET, bottom: BOTTOM_INSET, left: TRAY_W, right: 0 };
 const MAX_SPEED = 8.6;
 
 type Callout = { text: string; sub?: string; tone: 'good' | 'bad' | 'info' | 'big' } | null;
@@ -106,17 +107,14 @@ function MiniBall({ n, size = 18 }: { n: number; size?: number }) {
   );
 }
 
-/** Ball-return tray on the top rail: every pocketed ball, in the order it dropped. */
-function PottedTray({ balls, flash }: { balls: number[]; flash: boolean }) {
-  if (!balls.length) return null;
+/** Ball return in the left gutter, off the table: pocketed balls stack top-down in the order they dropped. */
+function PottedTray({ balls }: { balls: number[] }) {
   return (
-    <div className="absolute inset-x-0 flex justify-center pointer-events-none" style={{ top: TOP_INSET + 8 }}>
-      <div className="flex items-center gap-1 rounded-full px-2 py-1 transition-shadow" style={{
-        background: 'rgba(6,4,11,0.85)', border: `1px solid ${flash ? 'rgba(255,180,36,0.8)' : 'rgba(180,140,255,0.25)'}`,
-        boxShadow: flash ? '0 0 16px rgba(255,180,36,0.55)' : 'none', maxWidth: '86vw', overflow: 'hidden',
-      }}>
-        {balls.map((b, i) => <MiniBall key={`${b}-${i}`} n={b} />)}
-      </div>
+    <div className="absolute left-0 flex flex-col items-center gap-[3px] pointer-events-none" style={{
+      top: TOP_INSET + 14, bottom: BOTTOM_INSET + 14, width: TRAY_W, paddingTop: 4,
+    }}>
+      <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-[18px] rounded-full" style={{ background: 'rgba(255,255,255,0.03)', boxShadow: 'inset 0 0 6px rgba(0,0,0,0.8)' }} />
+      {balls.map((b, i) => <span key={`${b}-${i}`} className="relative"><MiniBall n={b} size={16} /></span>)}
     </div>
   );
 }
@@ -150,7 +148,6 @@ export function PoolLab() {
   useLayoutEffect(() => { gameRef.current = game; }, [game]);
   const pending = useRef<{ next: PoolState; shooter: number; newly: number[]; wasBreak: boolean } | null>(null);
   const [potted, setPotted] = useState<number[]>([]);
-  const [trayFlash, setTrayFlash] = useState(false);
   const apiRef = useRef<ScreenApi | null>(null);
   const aim = useRef<AimState>({ angle: 0, pull: 0, show: true, cue: null, placing: true, legal: [], striking: 0, spin: { x: 0, y: 0 } });
   const surface = useRef<HTMLDivElement>(null);
@@ -205,8 +202,6 @@ export function PoolLab() {
       let c = describe(p.next.lastCall, p.shooter, names, p.next.groups);
       if (p.newly.length) {
         setPotted((prev) => [...prev, ...p.newly]);
-        setTrayFlash(true);
-        setTimeout(() => setTrayFlash(false), 2200);
       }
       // A productive break on an open table: spell out what went down so the
       // shooter can pick a group.
@@ -406,7 +401,7 @@ export function PoolLab() {
       )}
       <div ref={surface} className="absolute inset-0" style={{ touchAction: 'none' }} />
 
-      <PottedTray balls={potted} flash={trayFlash} />
+      <PottedTray balls={potted} />
 
       {/* Players */}
       <div className="absolute top-0 inset-x-0 px-2 flex gap-2 pointer-events-none" style={{ paddingTop: 'max(8px, env(safe-area-inset-top))' }}>

@@ -44,8 +44,8 @@ interface Props {
   onEnd: () => void;
   onEvent?: (e: PoolSimResult['events'][number]) => void;
   apiRef: React.RefObject<ScreenApi | null>;
-  /** Screen px reserved for HUD above and controls below the table. */
-  insets?: { top: number; bottom: number };
+  /** Screen px reserved around the table (HUD above, controls below, trays beside). */
+  insets?: { top: number; bottom: number; left?: number; right?: number };
   /** Playback speed multiplier (tap-to-fast-forward). */
   speedRef?: React.RefObject<number>;
   /** Called after the camera re-frames (mount, resize). */
@@ -133,24 +133,27 @@ function Scene({ table, playback, aim, onEnd, onEvent, apiRef, insets = { top: 6
 
   // Frame the table as large as possible: fit the width, and fit the length into
   // whatever height is left after the HUD (top) and controls (bottom).
+  const iL = insets.left ?? 0, iR = insets.right ?? 0;
   useEffect(() => {
     const cam = camera as THREE.PerspectiveCamera;
     const tanV = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
     const needW = OUTER_W + 0.012, needL = OUTER_L + 0.012;
-    const free = Math.max(0.4, 1 - (insets.top + insets.bottom) / size.height);
-    const d = Math.max(needW / (tanV * cam.aspect), needL / (tanV * free));
-    // shift the table up/down so it's centred in the free band
+    const freeV = Math.max(0.4, 1 - (insets.top + insets.bottom) / size.height);
+    const freeH = Math.max(0.5, 1 - (iL + iR) / size.width);
+    const d = Math.max(needW / (tanV * cam.aspect * freeH), needL / (tanV * freeV));
+    // shift so the table is centred in the free area (screen-right is world −X)
     const worldPerPx = (2 * d * tanV) / size.height;
     const shiftZ = ((insets.bottom - insets.top) / 2) * worldPerPx;
+    const shiftX = ((iL - iR) / 2) * worldPerPx;
     const dir = new THREE.Vector3(0, 1, -0.1).normalize();
-    cam.position.copy(dir.multiplyScalar(d)).add(new THREE.Vector3(0, 0, -shiftZ));
+    cam.position.copy(dir.multiplyScalar(d)).add(new THREE.Vector3(shiftX, 0, -shiftZ));
     camBase.current.copy(cam.position);
-    cam.lookAt(0, 0, -shiftZ);
+    cam.lookAt(shiftX, 0, -shiftZ);
     cam.updateProjectionMatrix();
     cam.updateMatrixWorld();
     if (apiRef.current) apiRef.current.frameId++;
     onFramed?.();
-  }, [camera, size, insets.top, insets.bottom, apiRef, onFramed]);
+  }, [camera, size, insets.top, insets.bottom, iL, iR, apiRef, onFramed]);
 
   useEffect(() => { Object.assign(st.current, { t: 0, ended: false, ev: 0 }); }, [playback]);
 
