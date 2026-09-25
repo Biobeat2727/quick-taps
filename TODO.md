@@ -1,6 +1,6 @@
 # TODO — Quick Taps
 
-_Last updated 2026-09-24._
+_Last updated 2026-09-25._
 
 ## Current state
 - **Marble Race** — multiplayer 3D on the new streamer-style map system (Neon Summit: pachinko, spinners, jumps, helix, boxing-glove gauntlet), chase cam, NPC fill, rematch. 2D removed; original 3D map archived at `/marble-classic`.
@@ -10,26 +10,23 @@ _Last updated 2026-09-24._
 - Home picker: Pool / Bowling / Marble Race. Non-marble games auto-assign a colour (no marble picker).
 - Deployed from `main` to https://quick-taps.vercel.app (Vercel Root Directory fixed to repo root).
 
-## ⚠️ Blocking production (Davey — account actions)
-- [ ] Create a new Redis DB: Vercel → Storage → Upstash Redis, region **Oregon (us-west-2)**, connect to the project
-- [ ] Delete the old `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` env vars in Vercel (they point at the deleted DB and override the new `KV_REST_API_*`)
-- [ ] Vercel → Settings → Functions → Function Region → **Portland (pdx1)**
-- [ ] Redeploy; then check `GET /api/sessions` returns 200 on production
-- [ ] Locally: update `.env.local` with the new Redis values and delete `.env.development.local` (it forces the in-memory dev Redis)
+## Production
+- New Upstash Redis (Oregon) connected and working as of 2026-09-25.
+- [ ] Locally: `.env.development.local` still forces the in-memory dev Redis (`QT_MEMORY_REDIS=1`) — delete it to hit the real Redis from dev.
 
 ## Next up (suggested order)
-1. **Turn timer / AFK handling** for bowling + pool — a player who walks off without leaving stalls the match (e.g. 45 s shot clock, then auto-skip / concede; host can kick).
-2. **Sound** for both games — ball roll/clicks, break crack, pocket drops, pin crash, strike sting. WebAudio, respect a mute toggle.
-3. **Scores + nightly leaderboard** — nothing writes `QtScore` yet. Add a venue id to every score now so multi-bar licensing doesn't need a backfill.
-4. **"At the bar now" presence** on the home screen (Ably presence) + tap-to-challenge.
-5. **Legacy cleanup** — delete old bowling/pool code & routes (list in CLAUDE.md "Legacy"), the lobby's `bowl:started` handler, and `public/Neon_sign/` (a whole Vite project inside `public/`).
-6. **At-the-bar gating** (rotating QR token or geofence) — needed before a second bar.
+1. **Sound** for both games — ball roll/clicks, break crack, pocket drops, pin crash, strike sting. WebAudio, respect a mute toggle.
+2. **Scores + nightly leaderboard** — nothing writes `QtScore` yet. Add a venue id to every score now so multi-bar licensing doesn't need a backfill.
+3. **"At the bar now" presence** on the home screen (Ably presence) + tap-to-challenge.
+4. **Legacy cleanup** — delete old bowling/pool code & routes (list in CLAUDE.md "Legacy"), the lobby's `bowl:started` handler, and `public/Neon_sign/` (a whole Vite project inside `public/`).
+5. **At-the-bar gating** (rotating QR token or geofence) — needed before a second bar.
 
 ## Polish backlog
 - Marble: more maps (registry in `lib/marble/maps`; pick per race or let the host choose); bigger fields (8–12 marbles); recording is ~70 KB/marble — quantize to Int16 if Redis size becomes an issue.
 - Pool: show the remote player's cue swing/aim before their shot plays; optional house rule "sinking opponent's ball ends turn"; bot difficulty option; casual bot fouls a lot (~4/game).
 - Bowling: straight centre hits strike a bit too easily; split detection callouts; pinsetter sweep animation instead of pins snapping back; turkey/double callouts.
 - Both: lobby still says "Waiting for players" styling from marble era — fine, but could show game-specific copy.
+- Shot clock (done 2026-09-25): maybe a host "kick" button for someone who's present but stalling; tune clock lengths from real play.
 - Session TTL is 10 min idle (heartbeat keeps it alive); match TTL 30 min.
 
 ## Deferred (by decision)

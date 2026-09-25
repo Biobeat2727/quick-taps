@@ -14,7 +14,8 @@ function memoryRedis(): Redis {
   const clone = <T,>(v: T): T => (v === undefined ? v : JSON.parse(JSON.stringify(v)));
   const impl = {
     async get<T>(k: string) { const e = live(k); return (e ? clone(e.v) : null) as T | null; },
-    async set(k: string, v: unknown, opts?: { ex?: number }) {
+    async set(k: string, v: unknown, opts?: { ex?: number; nx?: boolean }) {
+      if (opts?.nx && live(k)) return null;
       kv.set(k, { v: clone(v), exp: opts?.ex ? Date.now() + opts.ex * 1000 : 0 });
       return "OK";
     },

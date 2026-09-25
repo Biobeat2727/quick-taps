@@ -1,13 +1,5 @@
-import {
-  getSession,
-  setSession,
-  deleteSession,
-  removeSessionFromIndex,
-} from "@/lib/redis/session";
-import { ablyRest } from "@/lib/ably/server";
-import { CHANNELS } from "@/lib/ably/channels";
 import { z } from "zod";
-import { getMatch, setMatch, dropPlayer } from "@/lib/match/match-server";
+import { removePlayer } from "@/lib/session/remove-player";
 
 const LeaveSchema = z.object({
   playerId: z.string().min(1),
@@ -19,13 +11,7 @@ export async function POST(
 ) {
   const { id } = await params;
 
-  const session = await getSession(id);
-  if (!session) {
-    return Response.json({ error: "Session not found" }, { status: 404 });
-  }
-
-  const body = await request.json();
-  const parsed = LeaveSchema.safeParse(body);
+  const parsed = LeaveSchema.safeParse(await request.json());
   if (!parsed.success) {
     return Response.json(
       { error: "Invalid request", details: parsed.error.flatten() },
@@ -33,37 +19,7 @@ export async function POST(
     );
   }
 
-  const { playerId } = parsed.data;
-
-  // Notify session subscribers before potentially deleting
-  const sessionChannel = ablyRest.channels.get(CHANNELS.session(id));
-  await sessionChannel.publish("player:left", { playerId });
-
-  session.players = session.players.filter((p) => p.id !== playerId);
-
-  // Walking out mid-match: pool concedes, bowling skips them in the rotation
-  const match = await getMatch(id);
-  if (match) {
-    const next = dropPlayer(match, playerId);
-    if (next) {
-      await setMatch(id, next);
-      if (next.over) session.status = "lobby";
-      await sessionChannel.publish("match:update", { match: next, reason: "left" });
-    }
-  }
-
-  // NPCs don't hold a table open — delete once the last human leaves
-  const humansRemain = session.players.some((p) => !p.isNpc);
-  if (!humansRemain) {
-    await deleteSession(id);
-    await removeSessionFromIndex(id);
-  } else {
-    session.lastActivity = Date.now();
-    await setSession(session);
-  }
-
-  const sessionsChannel = ablyRest.channels.get(CHANNELS.sessions());
-  await sessionsChannel.publish("session:list:updated", null);
-
+  const ok = await removePlayer(id, parsed.data.playerId, "left");
+  if (!ok) return Response.json({ error: "Session not found" }, { status: 404 });
   return new Response(null, { status: 204 });
 }

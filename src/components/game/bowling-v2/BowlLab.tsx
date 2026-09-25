@@ -10,6 +10,8 @@ import type { BowlingMatch, BowlRecording, BowlShotPayload, MatchPlayer } from '
 import type { BowlingGameState } from '@/types/bowling';
 import { BowlScene, playbackEndFrame, type Hype, type Playback } from './BowlScene';
 import { useSwipeThrow, type SwipeResult } from './useSwipeThrow';
+import { ShotClock } from '../ShotClock';
+import { SHOT_CLOCK_MS } from '@/lib/match/shot-clock';
 
 const MAX_AIM_X = 0.45;
 
@@ -101,7 +103,9 @@ export interface BowlGameProps {
   initialSeq?: number;
   /** Online play. Absent = solo lab. */
   net?: MatchNet<BowlingMatch>;
-  sync?: { seq: number; state: BowlingGameState; players: MatchPlayer[] };
+  sync?: { seq: number; state: BowlingGameState; players: MatchPlayer[]; force?: boolean };
+  /** Shot-clock deadline for the current turn (local ms), online only. */
+  deadline?: number | null;
   onLeave?: () => void;
 }
 
@@ -111,7 +115,7 @@ export function BowlLab() {
   return <BowlGame players={[{ id: 'me', name: 'You', color: '#ff3fd0', isNpc: false }]} meId="me" hostId="me" initial={initial} />;
 }
 
-export function BowlGame({ players: initialPlayers, meId, hostId, initial, initialSeq = 0, net, sync, onLeave }: BowlGameProps) {
+export function BowlGame({ players: initialPlayers, meId, hostId, initial, initialSeq = 0, net, sync, deadline, onLeave }: BowlGameProps) {
   const [players, setPlayers] = useState(initialPlayers);
   const [game, setGame] = useState<BowlingGameState>(initial);
   const [playback, setPlayback] = useState<Playback | null>(null);
@@ -210,10 +214,17 @@ export function BowlGame({ players: initialPlayers, meId, hostId, initial, initi
     if (!e) return;
     pumping.current = true;
     try {
-      if (e.type === 'update') {
+      if (e.type === 'update' && e.reason === 'timeout' && e.match.seq < seqRef.current) {
+        // a late-arriving timeout we've already moved past
+      } else if (e.type === 'update') {
         setPlayers(e.match.players);
         setGame(e.match.state);
         seqRef.current = e.match.seq;
+        if (e.reason === 'timeout' && e.actorId) {
+          const c: Callout = { text: 'TIME!', tone: 'gutter', who: e.actorId === meId ? undefined : nameOf(e.actorId) };
+          setCallout(c);
+          setTimeout(() => setCallout((cur) => (cur === c ? null : cur)), 1800);
+        }
       } else if (e.seq < seqRef.current) {
         // my own throw — already played
       } else if (e.seq > seqRef.current) {
@@ -246,12 +257,18 @@ export function BowlGame({ players: initialPlayers, meId, hostId, initial, initi
     return net.subscribe((e) => { queue.current.push(e); pumpRef.current(); });
   }, [net]);
 
+  // Server truth from a reload, applied once any playback has finished. `force`
+  // means the server refused our throw (e.g. the clock ran out first), so it
+  // replaces our optimistic state even at the same seq.
+  const appliedSync = useRef(sync);
   useEffect(() => {
-    if (!sync || pending.current || sync.seq === seqRef.current) return;
+    if (!sync || sync === appliedSync.current || pending.current || playback) return;
+    appliedSync.current = sync;
+    if (sync.seq === seqRef.current && !sync.force) return;
     seqRef.current = sync.seq;
     setPlayers(sync.players);
     setGame(sync.state);
-  }, [sync]);
+  }, [sync, playback]);
 
   // Dev hook for scripted throws: window.__bowl({ startX, direction, speed, spin })
   useEffect(() => {
@@ -310,6 +327,15 @@ export function BowlGame({ players: initialPlayers, meId, hostId, initial, initi
 
       {!playback && !over && ready && (
         <div className="absolute inset-x-0 text-center pointer-events-none bowl-hint" style={{ bottom: 'max(28px, env(safe-area-inset-bottom))' }}>
+          <div className="flex justify-center mb-2">
+            <ShotClock
+              deadline={deadline}
+              maxMs={SHOT_CLOCK_MS.bowling}
+              mine={active === meId}
+              who={nameOf(active)}
+              visible={!!net && !remoteBusy}
+            />
+          </div>
           {myTurn ? (
             <>
               <p className="text-[12px] tracking-[0.22em] uppercase" style={{ color: 'rgba(210,195,255,0.75)' }}>

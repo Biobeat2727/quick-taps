@@ -23,7 +23,7 @@ export interface PoolState {
 }
 
 export type PoolCall =
-  | { kind: 'foul'; reason: 'scratch' | 'no-hit' | 'wrong-ball' }
+  | { kind: 'foul'; reason: 'scratch' | 'no-hit' | 'wrong-ball' | 'timeout' }
   | { kind: 'pot'; balls: number[] }
   | { kind: 'miss' }
   | { kind: 'claim'; group: Group }

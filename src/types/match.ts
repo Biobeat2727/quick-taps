@@ -21,6 +21,14 @@ interface MatchBase {
   seq: number;             // number of shots applied so far
   over: boolean;
   startedAt: number;
+  /** Server time (ms) the current human turn times out; null on NPC turns / game over. */
+  turnDeadline: number | null;
+  /** Consecutive shot-clock timeouts per player (reset when they shoot). */
+  afk?: Record<string, number>;
+  /** Transport only: server clock when this was sent, so phones can correct for clock skew. */
+  serverNow?: number;
+  /** Client only: this copy came from a resync after the server refused our change — apply it even at the same seq. */
+  resync?: boolean;
 }
 
 export interface BowlingMatch extends MatchBase { game: 'bowling'; state: BowlingGameState }

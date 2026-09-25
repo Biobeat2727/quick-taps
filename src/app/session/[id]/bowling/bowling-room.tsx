@@ -8,9 +8,9 @@ import type { BowlingMatch } from '@/types/match';
 
 export default function BowlingRoom({ sessionId }: { sessionId: string }) {
   const router = useRouter();
-  const { meId, match, error, net } = useMatch<BowlingMatch>(sessionId);
+  const { meId, match, error, net, deadline } = useMatch<BowlingMatch>(sessionId);
   // Only hand the game new "truth" when the match object itself changes (a reload)
-  const sync = useMemo(() => (match ? { seq: match.seq, state: match.state, players: match.players } : undefined), [match]);
+  const sync = useMemo(() => (match ? { seq: match.seq, state: match.state, players: match.players, force: !!match.resync } : undefined), [match]);
 
   const leave = async () => {
     if (meId) {
@@ -46,6 +46,7 @@ export default function BowlingRoom({ sessionId }: { sessionId: string }) {
       initialSeq={match.seq}
       net={net}
       sync={sync}
+      deadline={deadline}
       onLeave={() => void leave()}
     />
   );

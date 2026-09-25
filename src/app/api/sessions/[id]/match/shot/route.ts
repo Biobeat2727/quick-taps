@@ -5,7 +5,7 @@ import { getSession, setSession } from '@/lib/redis/session';
 import { ablyRest } from '@/lib/ably/server';
 import { CHANNELS } from '@/lib/ably/channels';
 import {
-  getMatch, setMatch, setRecording, maySubmit, activeActor, applyBowl, applyPool,
+  getMatch, setMatch, setRecording, maySubmit, activeActor, applyBowl, applyPool, claimSeq, releaseSeq,
 } from '@/lib/match/match-server';
 import type { BowlShotPayload, Match, PoolShotPayload } from '@/types/match';
 
@@ -73,8 +73,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     rec = p.data.rec;
   }
 
-  await setRecording(id, seq, rec);
-  await setMatch(id, next);
+  // One change per shot: a double submit, or the shot clock expiring at the same moment
+  if (!(await claimSeq(id, match, seq))) return Response.json({ error: 'Out of turn' }, { status: 409 });
+
+  try {
+    await setRecording(id, seq, rec);
+    await setMatch(id, next);
+  } catch (err) {
+    await releaseSeq(id, match, seq);
+    throw err;
+  }
 
   const session = await getSession(id);
   if (session) {
@@ -83,6 +91,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     await setSession(session);
   }
 
-  await ablyRest.channels.get(CHANNELS.session(id)).publish('match:shot', { seq, actorId, match: next });
+  await ablyRest.channels.get(CHANNELS.session(id)).publish('match:shot', { seq, actorId, match: next, now: Date.now() });
   return Response.json({ ok: true, match: next });
 }

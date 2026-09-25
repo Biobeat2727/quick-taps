@@ -35,5 +35,5 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   await ablyRest.channels.get(CHANNELS.session(id)).publish('match:started', { game: match.game });
   await ablyRest.channels.get(CHANNELS.sessions()).publish('session:list:updated', null);
-  return Response.json(match);
+  return Response.json({ ...match, serverNow: Date.now() });
 }

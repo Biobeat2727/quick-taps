@@ -21,17 +21,23 @@ Trade-off (accepted): physics results are trusted from the client, so a determin
 | `…/match/start/route.ts` | `POST {playerId}` — host only; creates/restarts (rematch) the match; sets session `playing`; publishes `match:started {game}` |
 | `…/match/shot/route.ts` | `POST {playerId, seq, payload}` — zod-validated; 409 on stale `seq`, 403 not your turn; publishes `match:shot {seq, actorId, match}` |
 | `…/match/rec/route.ts` | `GET ?seq=N` — the replay for shot N |
-| `src/app/api/sessions/[id]/leave/route.ts` | Also calls `dropPlayer` → publishes `match:update` |
+| `…/match/timeout/route.ts` | `POST {playerId, seq}` — any human reports the shot clock ran out; 425 if early, 409 if stale |
+| `src/lib/match/shot-clock.ts` | Clock length per game (shared client/server) |
+| `src/lib/session/remove-player.ts` | Leave / timeout drop: `dropPlayer`, publishes `player:left` + `match:update`, deletes empty tables |
+| `src/components/game/ShotClock.tsx` | Countdown pill; urgent + buzz for the shooter's last 10 s |
+| `src/app/api/sessions/[id]/leave/route.ts` | Calls `removePlayer` |
 | `src/app/session/[id]/pool/pool-room.tsx`, `…/bowling/bowling-room.tsx` | Rooms: `useMatch` → `PoolGame` / `BowlGame` (`key={match.startedAt}` so a rematch remounts) |
 
 ## Redis keys (TTL)
 - `qt:match:{sessionId}` — the `Match` (30 min)
 - `qt:match:rec:{sessionId}:{seq}` — replay for shot `seq` (15 min). Bowling ≈ 200 KB base64 per throw; pool ≈ 20–60 KB.
+- `qt:match:claim:{sessionId}:{startedAt}:{seq}` — `SET NX` claim (2 min): exactly one shot *or* timeout can change the match at each `seq`.
 
 ## Ably (`qt:session:{id}`)
 - `match:started {game}` — lobby routes everyone to `/session/{id}/{game}`; rooms reload (rematch)
 - `match:shot {seq, actorId, match}` — `seq` = index of the shot just applied; `match.seq` is after it
-- `match:update {match, reason}` — out-of-band change (someone left)
+- `match:update {match, reason, actorId?, now}` — out-of-band change: `left`, or `timeout` (clock ran out / dropped)
+- Every match message carries `now` (and `GET /match` carries `serverNow`) so phones correct the deadline for clock skew
 
 ## Client game contract (`PoolGame` / `BowlGame`)
 - Props: `players`, `meId`, `hostId`, `initial`, `initialSeq`, optional `net`, `sync`, `onLeave`. No `net` ⇒ local lab mode.
@@ -50,7 +56,12 @@ Trade-off (accepted): physics results are trusted from the client, so a determin
 - Leaving mid-match: **pool** → opponent wins; **bowling** → player removed from the rotation, lane passes on (frame advances if they were last).
 - Leaving happens only via the explicit "Leave" button (the rooms don't auto-leave on unload — a phone refresh must not forfeit).
 
+## Shot clock
+- Human turns get `turnDeadline` = time the turn began + a replay allowance (bowling 9 s, pool 8 s, 4 s at the start) + the clock (bowling 30 s, pool 45 s). NPC turns have none.
+- Every phone at the table arms a timer for the deadline (+ jitter) and `POST`s `/match/timeout`; the server checks the deadline, claims the `seq`, and applies it once.
+- Timeout = bowling: 0 pins for that throw; pool: foul (`lastCall.reason: 'timeout'`), ball in hand to the opponent. Shooting resets your count.
+- 2 timeouts in a row → removed from the table exactly like Leave (pool: opponent wins). The dropped phone shows "You timed out twice…".
+
 ## Known gaps
-- **No turn timer**: a player who walks away without leaving stalls the match.
 - Remote shots show the ball moving but not the other player's cue/aim animation.
 - Session TTL is kept alive by a 60 s heartbeat from `useMatch`.

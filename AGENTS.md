@@ -30,7 +30,7 @@ Sister products:
 - **DB**: Neon Postgres via Prisma (`qt_` tables; `QtScore` exists but nothing writes to it yet)
 
 ## Redis (important)
-- The original Upstash DB was deleted (found 2026-09-23). Production needs a new one: Vercel → Storage → Upstash Redis (Oregon), then **delete the old `UPSTASH_REDIS_REST_*` env vars** in Vercel (they override) and redeploy. `src/lib/redis/client.ts` accepts either `UPSTASH_REDIS_REST_URL/TOKEN` or Vercel's `KV_REST_API_URL/TOKEN`.
+- Upstash Redis (Oregon, `us-west-2`), connected through Vercel Storage (replaced 2026-09-25 after the original DB was deleted). `src/lib/redis/client.ts` accepts either `UPSTASH_REDIS_REST_URL/TOKEN` or Vercel's `KV_REST_API_URL/TOKEN`.
 - Local dev: `QT_MEMORY_REDIS=1` in git-ignored `.env.development.local` swaps in an in-process Redis stand-in (dev only). Delete that file to hit real Redis locally.
 - Ably is still the live shared app — local test tables publish there.
 

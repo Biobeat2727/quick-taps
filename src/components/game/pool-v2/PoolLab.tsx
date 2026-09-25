@@ -11,6 +11,8 @@ import { NPC_NAMES } from '@/lib/constants';
 import { PoolScene, type AimState, type PoolPlayback, type ScreenApi } from './PoolScene';
 import { ballHue } from './poolTextures';
 import { SpinBadge, SpinPicker, type Spin } from './SpinPicker';
+import { ShotClock } from '../ShotClock';
+import { SHOT_CLOCK_MS } from '@/lib/match/shot-clock';
 
 type V = [number, number];
 const BOT_SKILL = 0.6;
@@ -27,7 +29,7 @@ function describe(call: PoolCall | null, shooter: number, names: string[], group
   const who = names[shooter];
   switch (call.kind) {
     case 'foul': {
-      const t = call.reason === 'scratch' ? 'SCRATCH' : call.reason === 'no-hit' ? 'NO HIT' : 'WRONG BALL';
+      const t = call.reason === 'scratch' ? 'SCRATCH' : call.reason === 'no-hit' ? 'NO HIT' : call.reason === 'timeout' ? 'SHOT CLOCK' : 'WRONG BALL';
       return { text: t, sub: 1 - shooter === me ? 'You have ball in hand' : `${names[1 - shooter]} has ball in hand`, tone: 'bad' };
     }
     case 'claim':
@@ -134,7 +136,9 @@ export interface PoolGameProps {
   /** Online play. Absent = local game vs the bot (the lab). */
   net?: MatchNet<PoolMatch>;
   /** Server truth, when it changes out of band (resync after a failed submit). */
-  sync?: { seq: number; state: PoolState };
+  sync?: { seq: number; state: PoolState; force?: boolean };
+  /** Shot-clock deadline for the current turn (local ms), online only. */
+  deadline?: number | null;
   onLeave?: () => void;
 }
 
@@ -150,7 +154,7 @@ export function PoolLab() {
   );
 }
 
-export function PoolGame({ players, meId, hostId, initial, initialSeq = 0, net, sync, onLeave }: PoolGameProps) {
+export function PoolGame({ players, meId, hostId, initial, initialSeq = 0, net, sync, deadline, onLeave }: PoolGameProps) {
   const ME = Math.max(0, players.findIndex((p) => p.id === meId));
   const names = players.map((p, i) => (i === ME ? 'You' : p.name));
   const [game, setGame] = useState<PoolState>(initial);
@@ -279,11 +283,19 @@ export function PoolGame({ players, meId, hostId, initial, initialSeq = 0, net, 
     if (!e) return;
     pumping.current = true;
     try {
-      if (e.type === 'update') {
-        // e.g. the other player walked away
+      if (e.type === 'update' && e.reason === 'timeout' && e.match.seq < seqRef.current) {
+        // a late-arriving timeout we've already moved past
+      } else if (e.type === 'update') {
+        // e.g. the other player walked away, or ran out the shot clock
         setGame(e.match.state);
         seqRef.current = e.match.seq;
-        if (e.match.over && e.match.state.winner === ME) setCallout({ text: 'YOU WIN!', sub: 'Your opponent left the table', tone: 'big' });
+        if (e.match.over && e.match.state.winner === ME) {
+          setCallout({ text: 'YOU WIN!', sub: e.reason === 'timeout' ? 'Your opponent timed out' : 'Your opponent left the table', tone: 'big' });
+        } else if (e.reason === 'timeout' && !e.match.over) {
+          const c = describe(e.match.state.lastCall, e.match.state.turn === 0 ? 1 : 0, names, e.match.state.groups, ME);
+          setCallout(c);
+          setTimeout(() => setCallout((cur) => (cur === c ? null : cur)), 2200);
+        }
       } else if (e.seq < seqRef.current) {
         // my own shot (or the bot's, which I drove) — already played locally
       } else if (e.seq > seqRef.current) {
@@ -322,11 +334,17 @@ export function PoolGame({ players, meId, hostId, initial, initialSeq = 0, net, 
   }, [net]);
 
   // Resync from the server when the room hands us newer truth
+  // Server truth from a reload, applied once any playback has finished. `force`
+  // means the server refused our shot (e.g. the clock ran out first), so it
+  // replaces our optimistic state even at the same seq.
+  const appliedSync = useRef(sync);
   useEffect(() => {
-    if (!sync || pending.current || sync.seq === seqRef.current) return;
+    if (!sync || sync === appliedSync.current || pending.current || playback) return;
+    appliedSync.current = sync;
+    if (sync.seq === seqRef.current && !sync.force) return;
     seqRef.current = sync.seq;
     setGame(sync.state);
-  }, [sync]);
+  }, [sync, playback]);
 
   // ── Bot turn: think, swing the cue into line, pull back, fire ──
   useEffect(() => {
@@ -520,6 +538,15 @@ export function PoolGame({ players, meId, hostId, initial, initialSeq = 0, net, 
         className="absolute inset-x-0 bottom-0 px-3 flex flex-col gap-2"
         style={{ height: BOTTOM_INSET, paddingBottom: 'max(12px, env(safe-area-inset-bottom))', justifyContent: 'flex-end' }}
       >
+        <div className="flex justify-center">
+          <ShotClock
+            deadline={deadline}
+            maxMs={SHOT_CLOCK_MS.pool}
+            mine={game.turn === ME}
+            who={names[game.turn]}
+            visible={!!net && !playback && !remoteBusy && game.winner === null && !actor?.isNpc}
+          />
+        </div>
         <p className="text-center text-[11px] tracking-[0.16em] uppercase pointer-events-none" style={{ color: game.turn !== ME && !playback ? 'rgba(255,154,232,0.85)' : 'rgba(210,195,255,0.75)' }}>
           {playback ? 'Tap to speed up' : game.turn !== ME && game.winner === null ? `${names[game.turn]} is lining up…` : hint}
         </p>
