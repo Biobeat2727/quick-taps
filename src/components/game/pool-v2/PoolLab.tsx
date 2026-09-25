@@ -12,6 +12,8 @@ import { PoolScene, type AimState, type PoolPlayback, type ScreenApi } from './P
 import { ballHue } from './poolTextures';
 import { SpinBadge, SpinPicker, type Spin } from './SpinPicker';
 import { ShotClock } from '../ShotClock';
+import { SoundToggle } from '../SoundToggle';
+import { poolSfx, bowlSfx, marbleSfx } from '@/lib/audio/sfx';
 import { SHOT_CLOCK_MS } from '@/lib/match/shot-clock';
 
 type V = [number, number];
@@ -239,6 +241,7 @@ export function PoolGame({ players, meId, hostId, initial, initialSeq = 0, net, 
     paintPower(0);
     setCallout(null);
     setPlayback({ sim, from });
+    poolSfx.cue(shot.speed / 8);
     try { navigator.vibrate?.(shot.speed > 6 ? 30 : 12); } catch {}
   }, [tableWithCue, paintPower, net]);
 
@@ -321,6 +324,9 @@ export function PoolGame({ players, meId, hostId, initial, initialSeq = 0, net, 
           aim.current.show = false; aim.current.placing = false; aim.current.cue = null;
           setCallout(null);
           setPlayback({ sim, from: s.table });
+          // The recording doesn't carry cue power; the first contact's speed is a good proxy
+          const first = sim.events.find((ev) => ev.type === 'ball');
+          poolSfx.cue(first && 'speed' in first ? first.speed / 3 : 0.5);
         }
       }
     } finally {
@@ -500,9 +506,21 @@ export function PoolGame({ players, meId, hostId, initial, initialSeq = 0, net, 
   // Dev hook: window.__pool({ angle, speed, spin })
   useEffect(() => { (window as unknown as { __pool?: unknown }).__pool = (s: PoolShot) => shoot(s, gameRef.current.turn); }, [shoot]);
 
-  const onEvent = useCallback((e: { type: string; a: number }) => {
-    if (e.type === 'pocket') { try { navigator.vibrate?.(e.a === 0 ? [20, 40, 20] : 14); } catch {} }
+  const onEvent = useCallback((e: PoolSimResult['events'][number]) => {
+    if (e.type === 'ball') poolSfx.clack(e.speed);
+    else if (e.type === 'rail') poolSfx.rail(e.speed);
+    else if (e.type === 'pocket') {
+      poolSfx.pocket(e.a === 0);
+      try { navigator.vibrate?.(e.a === 0 ? [20, 40, 20] : 14); } catch {}
+    }
   }, []);
+
+  // Jingles for the big moments
+  useEffect(() => {
+    if (!callout) return;
+    if (callout.tone === 'big') marbleSfx.finish(true);
+    else if (callout.tone === 'bad') bowlSfx.miss();
+  }, [callout]);
 
   const groups = game.groups;
   const hint = game.turn === ME && !playback && game.winner === null
@@ -526,6 +544,7 @@ export function PoolGame({ players, meId, hostId, initial, initialSeq = 0, net, 
       <div ref={surface} className="absolute inset-0" style={{ touchAction: 'none' }} />
 
       <PottedTray balls={potted} />
+      <SoundToggle className="absolute right-2 z-20" style={{ top: 'calc(max(8px, env(safe-area-inset-top)) + 60px)' }} />
 
       {/* Players */}
       <div className="absolute top-0 inset-x-0 px-2 flex gap-2 pointer-events-none" style={{ paddingTop: 'max(8px, env(safe-area-inset-top))' }}>

@@ -15,17 +15,20 @@ _Last updated 2026-09-25._
 - [ ] Locally: `.env.development.local` still forces the in-memory dev Redis (`QT_MEMORY_REDIS=1`) — delete it to hit the real Redis from dev.
 
 ## Next up (suggested order)
-1. **Sound** for both games — ball roll/clicks, break crack, pocket drops, pin crash, strike sting. WebAudio, respect a mute toggle.
-2. **Scores + nightly leaderboard** — nothing writes `QtScore` yet. Add a venue id to every score now so multi-bar licensing doesn't need a backfill.
-3. **"At the bar now" presence** on the home screen (Ably presence) + tap-to-challenge.
-4. **Legacy cleanup** — delete old bowling/pool code & routes (list in CLAUDE.md "Legacy"), the lobby's `bowl:started` handler, and `public/Neon_sign/` (a whole Vite project inside `public/`).
-5. **At-the-bar gating** (rotating QR token or geofence) — needed before a second bar.
+1. **Scores + nightly leaderboard** — nothing writes `QtScore` yet. Add a venue id to every score now so multi-bar licensing doesn't need a backfill.
+2. **"At the bar now" presence** on the home screen (Ably presence) + tap-to-challenge.
+3. **Legacy cleanup** — delete old bowling/pool code & routes (list in CLAUDE.md "Legacy"), the lobby's `bowl:started` handler, and `public/Neon_sign/` (a whole Vite project inside `public/`).
+4. **At-the-bar gating** (rotating QR token or geofence) — needed before a second bar.
 
 ## Polish backlog
+- **Bowling rework (Davey, 2026-09-25 — do after the to-do list):**
+  - *Sound is bland and pre-queued.* The pin crash is a canned burst fired at impact, not driven by the physics. Make it physics-based: emit per-contact events from the sim (ball→pin, pin→pin, pin→lane/kickback, with impulse), and voice each one (like pool's ball events), plus a richer roll (lane boards, speed/hook-dependent) and pin-deck rattle.
+  - *Gameplay is too rigid/repeatable.* Find a good spot, throw full speed, and you get the identical strike with identical pin action every time. Needs variance and skill depth: e.g. per-throw release noise that grows with speed (power vs accuracy trade-off), lane oil/transition that changes as the game goes on, pin deflection/scatter randomness, and a hook that rewards touch over max speed.
 - Marble: more maps (registry in `lib/marble/maps`; pick per race or let the host choose); bigger fields (8–12 marbles); recording is ~70 KB/marble — quantize to Int16 if Redis size becomes an issue.
 - Pool: show the remote player's cue swing/aim before their shot plays; optional house rule "sinking opponent's ball ends turn"; bot difficulty option; casual bot fouls a lot (~4/game).
 - Bowling: straight centre hits strike a bit too easily; split detection callouts; pinsetter sweep animation instead of pins snapping back; turkey/double callouts.
 - Both: lobby still says "Waiting for players" styling from marble era — fine, but could show game-specific copy.
+- Sound (done 2026-09-25, `lib/audio/sfx.ts`, all synthesized): tune levels/voices from real play on phones; lobby/home UI sounds; ambient bar hum?
 - Shot clock (done 2026-09-25): maybe a host "kick" button for someone who's present but stalling; tune clock lengths from real play.
 - Session TTL is 10 min idle (heartbeat keeps it alive); match TTL 30 min.
 

@@ -11,6 +11,8 @@ import type { BowlingGameState } from '@/types/bowling';
 import { BowlScene, playbackEndFrame, type Hype, type Playback } from './BowlScene';
 import { useSwipeThrow, type SwipeResult } from './useSwipeThrow';
 import { ShotClock } from '../ShotClock';
+import { SoundToggle } from '../SoundToggle';
+import { bowlSfx, type Rumble } from '@/lib/audio/sfx';
 import { SHOT_CLOCK_MS } from '@/lib/match/shot-clock';
 
 const MAX_AIM_X = 0.45;
@@ -141,7 +143,13 @@ export function BowlGame({ players: initialPlayers, meId, hostId, initial, initi
 
   useEffect(() => { loadRapier().then((R) => { rapier.current = R; setReady(true); }); }, []);
 
+  // The ball's roll: starts on release, stops when it reaches the pins
+  const rollRef = useRef<Rumble | null>(null);
+  useEffect(() => () => rollRef.current?.stop(0.05), []);
+
   const startPlayback = useCallback((sim: BowlSimResult, hype: Hype, speed: number, spin: number, who: string) => {
+    rollRef.current?.stop(0.05);
+    rollRef.current = bowlSfx.roll(speed);
     setRelease({ mph: (speed * 2.237).toFixed(1), hook: hookLabel(spin), who });
     setThrowId((n) => n + 1);
     setPlayback({ sim, endFrame: playbackEndFrame(sim), hype });
@@ -174,6 +182,8 @@ export function BowlGame({ players: initialPlayers, meId, hostId, initial, initi
 
   const onImpact = useCallback(() => {
     const h = pending.current?.hype;
+    rollRef.current?.stop(0.35);
+    bowlSfx.pins(pending.current?.knocked.filter(Boolean).length ?? 0, h === 'strike');
     try { navigator.vibrate?.(h === 'strike' ? [40, 30, 70] : h === 'big' ? 35 : 18); } catch {}
   }, []);
 
@@ -190,6 +200,10 @@ export function BowlGame({ players: initialPlayers, meId, hostId, initial, initi
       : n === 0 ? { text: p.hype === 'gutter' ? 'GUTTER' : 'MISS', tone: 'gutter' }
       : { text: String(n), tone: 'count' };
     setCallout({ ...c!, who: p.who === meId ? undefined : nameOf(p.who) });
+    rollRef.current?.stop(0.2);
+    if (c.tone === 'strike') bowlSfx.strike();
+    else if (c.tone === 'spare') bowlSfx.spare();
+    else if (c.tone === 'gutter') { if (p.hype === 'gutter') bowlSfx.gutter(); bowlSfx.miss(); }
     // Remote throws carry the server's next state; my own apply the same rules locally
     const next = p.next ?? nextTurn(g, p.knocked, playersRef.current.map((q) => q.id));
     setTimeout(() => {
@@ -290,6 +304,8 @@ export function BowlGame({ players: initialPlayers, meId, hostId, initial, initi
         onEnd={onEnd}
       />
       <div ref={surface} className="absolute inset-0" style={{ touchAction: 'none' }} />
+
+      <SoundToggle className="absolute left-2 z-20" style={{ top: `calc(max(10px, env(safe-area-inset-top)) + ${players.length > 1 ? 118 : 88}px)` }} />
 
       {/* HUD: the current bowler's card, plus everyone's running totals */}
       <div className="absolute top-0 inset-x-0 px-3 pointer-events-none" style={{ paddingTop: 'max(10px, env(safe-area-inset-top))' }}>

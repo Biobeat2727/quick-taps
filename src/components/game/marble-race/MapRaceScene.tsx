@@ -15,6 +15,8 @@ import {
   REC_HZ, REC_STRIDE, MARBLE_R, SPINNER_H, SPINNER_T, SPINNER_Y, BUMPER_H, GLOVE, spinnerPose, puncherPose,
 } from '@/lib/marble/race-sim-core';
 import { ordinal, CountdownOverlay, ResultsScreen, type Participant } from './marble-race-shared';
+import { SoundToggle } from '../SoundToggle';
+import { marbleSfx, type Rumble } from '@/lib/audio/sfx';
 
 export interface MapRecording {
   numMarbles: number;
@@ -321,6 +323,7 @@ function Backdrop({ tr }: { tr: BuiltTrack }) {
 const _v = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 const _axis = new THREE.Vector3();
+const _earV = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0);
 
 function Director({
@@ -401,7 +404,18 @@ function Director({
     myFinishedAt: -1, order: [] as number[], shownRank: 0,
     speed: 0, lastV: 0, shake: 0, fov: 60,
     pos: [] as THREE.Vector3[], prog: new Float32Array(0),
+    // sound bookkeeping
+    punchU: [] as number[], pairD: new Float32Array(0), wasInGap: false, finishSounded: false,
+    roll: null as Rumble | null,
   });
+  useEffect(() => { const s = st.current; return () => { s.roll?.stop(0.1); s.roll = null; }; }, []);
+
+  /** Stereo position of a world point on screen, or null when too far from the camera to hear. */
+  const earshot = (p: THREE.Vector3, range: number): number | null => {
+    if (p.distanceTo(camera.position) > range) return null;
+    const ndc = _earV.copy(p).project(camera);
+    return ndc.z > 1 ? null : Math.max(-0.8, Math.min(0.8, ndc.x));
+  };
 
 
   useFrame((_, rawDt) => {
@@ -447,6 +461,18 @@ function Director({
       act.tag.position.set(pos[i].x, pos[i].y + 1.05, pos[i].z);
     }
 
+    // Marble-on-marble clacks: a pair that just closed to touching distance
+    if (s.pairD.length !== n * n) s.pairD = new Float32Array(n * n).fill(99);
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+      const d = pos[i].distanceTo(pos[j]);
+      const prev = s.pairD[i * n + j];
+      if (racing.current && d < MARBLE_R * 2 + 0.06 && prev >= MARBLE_R * 2 + 0.06 && prev < 3) {
+        const pan = earshot(pos[i], 28);
+        if (pan !== null) marbleSfx.clack(Math.min(1, (prev - d) / Math.max(dt, 1e-3) / 10), pan);
+      }
+      s.pairD[i * n + j] = d;
+    }
+
     // Punchers: glove slides along local x; the piston stretches back to its housing.
     // The glove glows hotter in the last beat before it fires (telegraph).
     punchers.forEach((pc, i) => {
@@ -458,6 +484,12 @@ function Director({
       piston.position.x = (gx + pc.housingX) / 2;
       piston.scale.y = Math.max(0.01, Math.abs(pc.housingX - gx));
       const u = puncherCycle(pc.p, s.clock);
+      // The cycle wraps to 0 at the moment the glove fires
+      if (racing.current && u < (s.punchU[i] ?? u)) {
+        const pan = earshot(gp, 32);
+        if (pan !== null) marbleSfx.punch(pan);
+      }
+      s.punchU[i] = u;
       const heat = u > 0.8 ? (u - 0.8) / 0.2 : u < 0.1 ? 1 : 0;
       (glove.material as THREE.MeshStandardMaterial).emissiveIntensity = 0.35 + heat * 1.6;
       const housing = housingRefs.current[i];
@@ -471,6 +503,10 @@ function Director({
       let hit = false;
       for (let i = 0; i < n && !hit; i++) {
         if (pos[i].distanceToSquared(pb.pos) < (pb.b.r + MARBLE_R + 0.15) ** 2 + BUMPER_H ** 2) hit = true;
+      }
+      if (hit && racing.current && (g.userData.flash ?? 0) < 0.6) {
+        const pan = earshot(pb.pos, 40);
+        if (pan !== null) marbleSfx.pop(pan);
       }
       const flash = hit && racing.current ? 1 : Math.max(0, (g.userData.flash ?? 0) - dt * 4);
       g.userData.flash = flash;
@@ -537,6 +573,15 @@ function Director({
     }
     s.camIdx = target;
 
+    // Rolling rumble follows the camera's marble; whoosh as it leaves a jump
+    if (racing.current && !s.done) {
+      s.roll ??= marbleSfx.roll();
+      s.roll.set(Math.min(0.14, 0.01 + s.speed * 0.005), 0.6 + Math.min(1.4, s.speed / 20));
+    } else if (s.roll && s.done) { s.roll.stop(0.6); s.roll = null; }
+    const inGap = tr.gapRanges.some(([a, b]) => prog[target] >= a - 1 && prog[target] < b);
+    if (inGap && !s.wasInGap && racing.current) marbleSfx.whoosh();
+    s.wasInGap = inGap;
+
     // Speed feel: FOV opens up with the followed marble's speed; hard velocity
     // changes (landings, wall slams) kick the camera.
     {
@@ -597,6 +642,7 @@ function Director({
       if (z !== s.lastZone) {
         if (s.lastZone >= 0 && h.zone && typeof h.zone.animate === 'function') {
           setText(h.zone, tr.zones[z].name);
+          marbleSfx.zone();
           setStyle(h.zone, 'color', tr.zones[z].color);
           h.zone.animate(
             [{ opacity: 0, transform: 'translateY(-8px) scale(0.9)' }, { opacity: 1, transform: 'none', offset: 0.15 },
@@ -605,6 +651,14 @@ function Director({
           );
         }
         s.lastZone = z;
+      }
+    }
+
+    // Finish sting: my marble crossing (or, with no marble of mine, the winner)
+    if (!s.finishSounded && racing.current) {
+      if (myIdx >= 0 ? s.myFinishedAt === s.clock : done(order[0])) {
+        s.finishSounded = true;
+        marbleSfx.finish(myIdx < 0 || order.indexOf(myIdx) === 0);
       }
     }
 
@@ -735,10 +789,14 @@ export default function MapRaceScene({
   });
 
   useEffect(() => {
+    marbleSfx.countdown(false);
     const timers = [
-      setTimeout(() => setCountVal(2), 1000),
-      setTimeout(() => setCountVal(1), 2000),
-      setTimeout(() => { setCountVal(null); racing.current = true; setPhase('racing'); }, 3000),
+      setTimeout(() => { setCountVal(2); marbleSfx.countdown(false); }, 1000),
+      setTimeout(() => { setCountVal(1); marbleSfx.countdown(false); }, 2000),
+      setTimeout(() => {
+        setCountVal(null); racing.current = true; setPhase('racing');
+        marbleSfx.countdown(true); marbleSfx.gate();
+      }, 3000),
     ];
     return () => timers.forEach(clearTimeout);
   }, []);
@@ -878,6 +936,7 @@ export default function MapRaceScene({
           Cam: You
         </button>
       )}
+      <SoundToggle style={{ position: 'absolute', right: 12, bottom: !isProjector && myIdx >= 0 ? 96 : 52, zIndex: 12 }} />
     </div>
   );
 }

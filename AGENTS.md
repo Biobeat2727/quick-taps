@@ -78,6 +78,7 @@ Marble architecture: server runs Rapier at 120 Hz and records `[x, y, z, progres
 - **Bloom bleeds from thin bright emissives** (rail neon, diamonds) — keep idle emissives under the threshold and flash on events.
 - Phones: no MSAA (`pointer: coarse`), fixed quality tier per load (never switch tiers mid-game — rebuilding render targets flickers / loses the GPU context), dispose GPU resources on unmount, handle `webglcontextlost`.
 - `setPointerCapture` can throw — wrap it.
+- **Sound** is procedural WebAudio in `src/lib/audio/sfx.ts` (`poolSfx`, `bowlSfx`, `marbleSfx`, `rumble`) — no audio files. Phones unlock audio on the first tap; calls before that are silent no-ops. Mute is per phone (`qt:muted`), toggled by `components/game/SoundToggle.tsx`. Rate-limit anything that can fire in bursts (break clacks, marble clacks).
 - Keep game physics/rules pure and isomorphic (`lib/*/…-core.ts`, `…-rules.ts`) so they run on the phone, on the server, and in offline calibration scripts (`npx tsx`).
 
 ## Testing on a phone (dev)
