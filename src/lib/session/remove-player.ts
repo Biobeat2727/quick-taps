@@ -6,6 +6,7 @@ import { getSession, setSession, deleteSession, removeSessionFromIndex } from '@
 import { ablyRest } from '@/lib/ably/server';
 import { CHANNELS } from '@/lib/ably/channels';
 import { getMatch, setMatch, dropPlayer } from '@/lib/match/match-server';
+import { recordScores, matchScores } from '@/lib/scores/scores';
 
 export async function removePlayer(sessionId: string, playerId: string, reason: 'left' | 'timeout'): Promise<boolean> {
   const session = await getSession(sessionId);
@@ -23,6 +24,8 @@ export async function removePlayer(sessionId: string, playerId: string, reason: 
       await setMatch(sessionId, next);
       if (next.over) session.status = 'lobby';
       await sessionChannel.publish('match:update', { match: next, reason, actorId: playerId, now: Date.now() });
+      // A walk-off can end the game (pool forfeit, or the last bowler finishing the rotation)
+      if (next.over) await recordScores(matchScores(sessionId, next));
     }
   }
 

@@ -7,14 +7,23 @@ datasource db {
   provider = "postgresql"
 }
 
-// Reserved for leaderboard persistence — not used in v1
+// Leaderboard entries. The table is created by prisma/sql/001_qt_scores.sql —
+// the database is shared with other apps, so never `prisma db push` / `migrate`.
 model QtScore {
   id         String   @id @default(cuid())
+  venueId    String   @map("venue_id")
+  night      String
   game       String
-  playerName String
-  placement  Int
-  sessionId  String
-  createdAt  DateTime @default(now())
+  kind       String
+  playerName String   @map("player_name")
+  playerKey  String   @map("player_key")
+  value      Int
+  vsHumans   Boolean  @map("vs_humans")
+  sessionId  String   @map("session_id")
+  dedupeKey  String   @unique @map("dedupe_key")
+  countsAt   DateTime @default(now()) @map("counts_at") @db.Timestamptz(6)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
+  @@index([venueId, night, game], map: "qt_scores_board")
   @@map("qt_scores")
 }

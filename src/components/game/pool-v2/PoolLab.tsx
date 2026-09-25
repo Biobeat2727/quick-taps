@@ -13,6 +13,7 @@ import { ballHue } from './poolTextures';
 import { SpinBadge, SpinPicker, type Spin } from './SpinPicker';
 import { ShotClock } from '../ShotClock';
 import { SoundToggle } from '../SoundToggle';
+import { TonightRank } from '@/components/leaderboard/TonightRank';
 import { poolSfx, bowlSfx, marbleSfx } from '@/lib/audio/sfx';
 import { SHOT_CLOCK_MS } from '@/lib/match/shot-clock';
 
@@ -624,6 +625,8 @@ export function PoolGame({ players, meId, hostId, initial, initialSeq = 0, net, 
 
       {game.winner !== null && !playback && (
         <div className="absolute inset-x-0 flex flex-col items-center gap-3" style={{ bottom: '18%' }}>
+          {/* Only wins over another person make the board */}
+          <TonightRank game="pool" name={players[ME]?.name} enabled={!!net && game.winner === ME && players.every((p) => !p.isNpc)} />
           {!net ? (
             <button
               className="btn-amber rounded-2xl px-8 py-4 font-bold uppercase tracking-wide active:scale-95 transition-transform"

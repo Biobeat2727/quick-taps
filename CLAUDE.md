@@ -27,7 +27,7 @@ Sister products:
 - **Physics**: Rapier (`@dimforge/rapier3d-compat`) for bowling & marble race; a custom 2D engine for pool
 - **Realtime**: Ably (shared app with What's on Tap?)
 - **Ephemeral state**: Upstash Redis — see "Redis" below
-- **DB**: Neon Postgres via Prisma (`qt_` tables; `QtScore` exists but nothing writes to it yet)
+- **DB**: Neon Postgres via Prisma — `qt_scores` powers tonight's leaderboards (`lib/scores/scores.ts`, `/api/leaderboard`, `/leaderboard`). ⚠️ The database is **shared with What's on Tap** (Room, Game, Vote, … tables): never `prisma db push` / `prisma migrate` — apply additive SQL from `prisma/sql/` with `node scripts/apply-sql.mjs <file>`. To regenerate the client locally: `DATABASE_URL=… npx prisma generate`.
 
 ## Redis (important)
 - Upstash Redis (Oregon, `us-west-2`), connected through Vercel Storage (replaced 2026-09-25 after the original DB was deleted). `src/lib/redis/client.ts` accepts either `UPSTASH_REDIS_REST_URL/TOKEN` or Vercel's `KV_REST_API_URL/TOKEN`.
@@ -87,4 +87,4 @@ Marble architecture: server runs Rapier at 120 Hz and records `[x, y, z, progres
 - Two-player local test: two browser origins (`localhost` + LAN IP) have separate `localStorage`, so they act as two players.
 
 ## Environment variables
-See `.env.local` (not committed): Ably key(s), Neon `DATABASE_URL`, Upstash Redis URL/token (or Vercel KV names), `NEXT_PUBLIC_APP_URL`.
+See `.env.local` (not committed): Ably key(s), Neon `DATABASE_URL`, Upstash Redis URL/token (or Vercel KV names), `NEXT_PUBLIC_APP_URL`. Optional: `QT_VENUE_ID` (default `pilot`; local dev always uses `dev` so tests never touch a real board) and `QT_VENUE_TZ` (default `America/Los_Angeles`; a night runs 4 AM → 4 AM venue time).

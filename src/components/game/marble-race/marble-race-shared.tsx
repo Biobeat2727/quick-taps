@@ -72,10 +72,12 @@ export function CountdownOverlay({ val }: { val: number | null }) {
 }
 
 export function ResultsScreen({
-  ranking, myPlayerId, onLeave, onRaceAgain,
+  ranking, myPlayerId, onLeave, onRaceAgain, tonight,
 }: {
   ranking: Participant[];
   myPlayerId: string;
+  /** Optional badge under the headline (e.g. tonight's leaderboard standing). */
+  tonight?: React.ReactNode;
   onLeave: () => void;
   onRaceAgain: () => void;
 }) {
@@ -109,6 +111,7 @@ export function ResultsScreen({
           {winner.id === myPlayerId ? ' — that’s you. Drinks on them.' : ' takes it.'}
         </p>
       )}
+      {tonight && <div style={{ margin: '-12px 0 24px' }}>{tonight}</div>}
 
       {top3.length > 0 && (
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, marginBottom: 36 }}>

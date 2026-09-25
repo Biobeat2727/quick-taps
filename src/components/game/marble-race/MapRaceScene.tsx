@@ -16,6 +16,7 @@ import {
 } from '@/lib/marble/race-sim-core';
 import { ordinal, CountdownOverlay, ResultsScreen, type Participant } from './marble-race-shared';
 import { SoundToggle } from '../SoundToggle';
+import { TonightRank } from '@/components/leaderboard/TonightRank';
 import { marbleSfx, type Rumble } from '@/lib/audio/sfx';
 
 export interface MapRecording {
@@ -816,6 +817,11 @@ export default function MapRaceScene({
       <ResultsScreen
         ranking={recording.ranking.map((i) => participants[i])}
         myPlayerId={myPlayerId}
+        tonight={
+          myIdx >= 0 && recording.ranking[0] === myIdx
+            ? <TonightRank game="marble_race" name={participants[myIdx].name} />
+            : undefined
+        }
         onLeave={onLeave}
         onRaceAgain={onRaceAgain}
       />

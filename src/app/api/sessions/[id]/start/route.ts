@@ -4,7 +4,9 @@ import { ablyRest } from "@/lib/ably/server";
 import { CHANNELS } from "@/lib/ably/channels";
 import { NPC_NAMES, MARBLE_COLORS } from "@/lib/constants";
 import RAPIER from "@dimforge/rapier3d-compat";
-import { runRaceSim } from "@/lib/marble/race-sim-core";
+import { runRaceSim, REC_HZ } from "@/lib/marble/race-sim-core";
+import { after } from "next/server";
+import { recordScores } from "@/lib/scores/scores";
 import { getMap, DEFAULT_MAP_ID } from "@/lib/marble/maps";
 import type { RaceRecording } from "@/types/race";
 import { redis } from "@/lib/redis/client";
@@ -78,6 +80,22 @@ export async function POST(
     ranking: res.ranking,
   };
   await redis.set(`qt:race:recording:${id}`, recording, { ex: RECORDING_TTL });
+
+  // Leaderboard: a win counts only against another human. The race is decided
+  // now but plays out over the next minute or two, so the row stays hidden
+  // until the winner actually crosses the line on everyone's screen.
+  const humans = session.players.filter((p) => !p.isNpc).length;
+  const winIdx = res.ranking[0];
+  const winner = session.players[winIdx];
+  const finishFrame = res.finishFrame[winIdx];
+  if (humans >= 2 && winner && !winner.isNpc && finishFrame !== null) {
+    const COUNTDOWN_AND_LOAD_MS = 5_000;
+    after(() => recordScores([{
+      game: "marble_race", kind: "win", playerName: winner.name, value: 1, vsHumans: true,
+      sessionId: id, dedupeKey: `${id}:${raceSeed}:win`,
+      countsAt: new Date(Date.now() + COUNTDOWN_AND_LOAD_MS + (finishFrame / REC_HZ) * 1000),
+    }]));
+  }
 
   const channel = ablyRest.channels.get(CHANNELS.session(id));
   await channel.publish("game:started", {

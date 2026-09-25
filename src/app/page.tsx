@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Ably from "ably";
 import type { GameId, Session } from "@/types/session";
 import { GAME_LABELS, MARBLE_COLORS } from "@/lib/constants";
+import { TonightBoard } from "@/components/leaderboard/TonightBoard";
 
 // Stable anonymous ID used as Ably clientId before the player joins a session
 function getBrowserId(): string {
@@ -209,6 +210,9 @@ export default function HomePage() {
           ))}
           </div>
         )}
+        <div className="mt-6">
+          <TonightBoard name={playerName} />
+        </div>
       </div>
 
       {/* Start a game */}

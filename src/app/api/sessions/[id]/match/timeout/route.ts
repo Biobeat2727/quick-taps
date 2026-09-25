@@ -1,6 +1,8 @@
 export const runtime = 'nodejs';
 
 import { z } from 'zod';
+import { after } from 'next/server';
+import { recordScores, matchScores } from '@/lib/scores/scores';
 import { getSession, setSession } from '@/lib/redis/session';
 import { ablyRest } from '@/lib/ably/server';
 import { CHANNELS } from '@/lib/ably/channels';
@@ -52,5 +54,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     await setSession(session);
   }
   await ablyRest.channels.get(CHANNELS.session(id)).publish('match:update', { match: next, reason: 'timeout', actorId, now: Date.now() });
+  if (next.over) after(() => recordScores(matchScores(id, next)));
   return Response.json({ ok: true, match: next });
 }

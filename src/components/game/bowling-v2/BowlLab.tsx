@@ -12,6 +12,7 @@ import { BowlScene, playbackEndFrame, type Hype, type Playback } from './BowlSce
 import { useSwipeThrow, type SwipeResult } from './useSwipeThrow';
 import { ShotClock } from '../ShotClock';
 import { SoundToggle } from '../SoundToggle';
+import { TonightRank } from '@/components/leaderboard/TonightRank';
 import { bowlSfx, type Rumble } from '@/lib/audio/sfx';
 import { SHOT_CLOCK_MS } from '@/lib/match/shot-clock';
 
@@ -381,6 +382,7 @@ export function BowlGame({ players: initialPlayers, meId, hostId, initial, initi
 
       {over && !playback && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-6" style={{ background: 'rgba(7,4,12,0.78)' }}>
+          {net && <TonightRank game="bowling" name={players.find((p) => p.id === meId)?.name} atLeast={totalOf(game, meId)} />}
           <p className="text-[11px] tracking-[0.35em] uppercase" style={{ color: 'rgba(210,195,255,0.6)' }}>Final score{players.length > 1 ? 's' : ''}</p>
           {players.length === 1 ? (
             <p className="font-display text-7xl bowl-callout-strike" style={{ animation: 'none' }}>{totalOf(game, players[0].id)}</p>
