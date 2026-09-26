@@ -7,6 +7,8 @@ import MapRaceScene, { type MapRecording } from '@/components/game/marble-race/M
 import { getMap } from '@/lib/marble/maps';
 import type { Session, SessionPlayer } from '@/types/session';
 import type { RaceRecording } from '@/types/race';
+import { useActivity } from '@/components/presence/PresenceProvider';
+import { getBrowserId } from '@/lib/browser-id';
 
 interface Props {
   sessionId: string;
@@ -37,6 +39,7 @@ function decodeRecording(raw: RaceRecording): Decoded {
 
 export default function RaceRoom({ sessionId }: Props) {
   const router = useRouter();
+  useActivity('playing', 'marble_race');
 
   const [players,   setPlayers]   = useState<SessionPlayer[] | null>(null);
   const [race, setRace] = useState<Decoded | null>(null);
@@ -92,10 +95,7 @@ export default function RaceRoom({ sessionId }: Props) {
       const raw = localStorage.getItem(`qt:player:${sessionId}`);
       clientId = raw ? (JSON.parse(raw) as { playerId: string }).playerId : '';
     } catch { /* fall through to browserId */ }
-    if (!clientId) {
-      clientId = localStorage.getItem('qt:browserId') ?? crypto.randomUUID();
-      localStorage.setItem('qt:browserId', clientId);
-    }
+    if (!clientId) clientId = getBrowserId();
 
     const client = new Ably.Realtime({
       authUrl: `/api/ably/token?playerId=${encodeURIComponent(clientId)}&sessionId=${encodeURIComponent(sessionId)}`,

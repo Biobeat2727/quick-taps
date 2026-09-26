@@ -6,16 +6,8 @@ import Ably from "ably";
 import type { GameId, Session } from "@/types/session";
 import { GAME_LABELS, MARBLE_COLORS } from "@/lib/constants";
 import { TonightBoard } from "@/components/leaderboard/TonightBoard";
-
-// Stable anonymous ID used as Ably clientId before the player joins a session
-function getBrowserId(): string {
-  let id = localStorage.getItem("qt:browserId");
-  if (!id) {
-    id = crypto.randomUUID();
-    localStorage.setItem("qt:browserId", id);
-  }
-  return id;
-}
+import { AtTheBar } from "@/components/presence/AtTheBar";
+import { getBrowserId } from "@/lib/browser-id";
 
 type ColorPickerState = {
   action: "create" | "join";
@@ -68,9 +60,10 @@ export default function HomePage() {
     });
     const channel = client.channels.get("qt:sessions");
 
-    void channel.subscribe("session:list:updated", () => {
+    // .catch: attach rejects with "Connection closed" if we navigate away first
+    channel.subscribe("session:list:updated", () => {
       void fetchSessions();
-    });
+    }).catch(() => {});
 
     return () => {
       channel.unsubscribe();
@@ -175,6 +168,9 @@ export default function HomePage() {
 
       {/* Session list */}
       <div className="flex-1 overflow-y-auto px-4 py-5">
+        <div className="mb-6">
+          <AtTheBar />
+        </div>
         <div className="flex items-center gap-2 mb-3">
           {sessions.length > 0 && (
             <span className="live-dot w-2 h-2 rounded-full" />

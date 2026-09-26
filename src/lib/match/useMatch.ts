@@ -72,7 +72,7 @@ export function useMatch<M extends Match>(sessionId: string) {
       authUrl: `/api/ably/token?playerId=${encodeURIComponent(meId)}&sessionId=${encodeURIComponent(sessionId)}`,
     });
     const ch = client.channels.get(`qt:session:${sessionId}`);
-    void ch.subscribe((msg) => {
+    ch.subscribe((msg) => {
       if (msg.name === 'match:shot') {
         const d = msg.data as { seq: number; actorId: string; match: M; now?: number };
         noteClock(d.match, d.now);
@@ -87,7 +87,7 @@ export function useMatch<M extends Match>(sessionId: string) {
       } else if (msg.name === 'match:started') {
         void load(); // rematch — room remounts the game from the fresh match
       }
-    });
+    }).catch(() => {}); // attach rejects if we leave before it connects
     return () => { ch.unsubscribe(); client.close(); };
   }, [meId, sessionId, load, noteClock]);
 

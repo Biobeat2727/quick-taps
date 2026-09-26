@@ -48,6 +48,7 @@ Turn-based multiplayer (bowling, pool) shares one match system: `docs/MULTIPLAYE
 
 ## Key concepts
 - No host role beyond "first human starts the game / rematches"
+- **At the bar now**: `components/presence/PresenceProvider.tsx` (in the root layout) holds one Ably connection per device: presence on `qt:lobby:{scope}` (scope = `dev` locally, else `NEXT_PUBLIC_QT_VENUE_ID` or `pilot` — dev and prod share one Ably app) with `{name, status, game}`; pages call `useActivity('table'|'playing', game)`. Challenges: `POST /api/challenge` opens a table for the challenger and publishes to the target's `qt:inbox:{browserId}` (server-only publish; the inbox rewinds 45 s so a connection blip doesn't lose one); `/api/challenge/decline` notifies the challenger. Device id: `lib/browser-id.ts` (works on plain-http LAN, where `crypto.randomUUID` doesn't exist).
 - Tables are open and listed on the home screen; player identity is per-table in `localStorage` (`qt:player:{sessionId}`), name in `localStorage`
 - Marble Race asks for a marble colour; other games auto-assign a free colour (it's the scorecard dot)
 - Solo fallback: NPC marbles (race), NPC opponent (pool). Bowling solo is just single-player.

@@ -3,7 +3,7 @@
 // pollute a real bar's leaderboard (the database is shared with production).
 
 export const VENUE_ID =
-  process.env.NODE_ENV === 'production' ? (process.env.QT_VENUE_ID || 'pilot') : 'dev';
+  process.env.NODE_ENV === 'production' ? (process.env.QT_VENUE_ID || process.env.NEXT_PUBLIC_QT_VENUE_ID || 'pilot') : 'dev';
 
 export const VENUE_TZ = process.env.QT_VENUE_TZ || 'America/Los_Angeles';
 

@@ -1,4 +1,5 @@
 import Ably from "ably";
+import { CHANNELS } from "@/lib/ably/channels";
 
 const globalForAbly = globalThis as unknown as { ablyRest: Ably.Rest };
 
@@ -17,13 +18,20 @@ export const ablyRest: Ably.Rest = new Proxy({} as Ably.Rest, {
 
 export async function createAblyToken(
   playerId: string,
-  sessionId?: string
+  sessionId?: string,
+  lobby = false,
 ): Promise<Ably.TokenDetails> {
   const capabilities: Record<string, string[]> = {
     "qt:sessions": ["subscribe"],
   };
   if (sessionId) {
     capabilities[`qt:session:${sessionId}`] = ["subscribe", "publish"];
+  }
+  if (lobby) {
+    // Presence at the bar + this device's own challenge inbox (server publishes)
+    capabilities[CHANNELS.lobby()] = ["subscribe", "presence"];
+    // history: the inbox rewinds on (re)connect so a blip doesn't eat a challenge
+    capabilities[`qt:inbox:${playerId}`] = ["subscribe", "history"];
   }
 
   const tokenRequest = await getAblyRest().auth.requestToken({

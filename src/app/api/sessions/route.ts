@@ -1,7 +1,5 @@
-import { randomUUID } from "crypto";
-import { listSessions, setSession, addSessionToIndex } from "@/lib/redis/session";
-import { ablyRest } from "@/lib/ably/server";
-import { CHANNELS } from "@/lib/ably/channels";
+import { listSessions } from "@/lib/redis/session";
+import { createSession } from "@/lib/session/create-session";
 import { z } from "zod";
 
 const CreateSchema = z.object({
@@ -32,28 +30,7 @@ export async function POST(request: Request) {
     }
 
     const { game, playerName, playerColor } = parsed.data;
-    const now = Date.now();
-
-    const session = {
-      id: randomUUID(),
-      game,
-      createdAt: now,
-      lastActivity: now,
-      players: [
-        {
-          id: randomUUID(),
-          name: playerName,
-          color: playerColor,
-          isNpc: false as const,
-        },
-      ],
-    };
-
-    await setSession(session);
-    await addSessionToIndex(session.id);
-
-    const channel = ablyRest.channels.get(CHANNELS.sessions());
-    await channel.publish("session:list:updated", null);
+    const session = await createSession(game, playerName, playerColor);
 
     return Response.json(session, { status: 201 });
   } catch (error) {

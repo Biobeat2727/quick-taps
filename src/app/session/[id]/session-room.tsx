@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import Ably from "ably";
 import type { Session } from "@/types/session";
 import { GAME_LABELS, MARBLE_COLORS } from "@/lib/constants";
+import { useActivity } from "@/components/presence/PresenceProvider";
+import { getBrowserId } from "@/lib/browser-id";
 
 type PlayerInfo = { playerId: string; color: string };
 
@@ -17,19 +19,11 @@ function getPlayerInfo(sessionId: string): PlayerInfo | null {
   }
 }
 
-function getBrowserId(): string {
-  let id = localStorage.getItem("qt:browserId");
-  if (!id) {
-    id = crypto.randomUUID();
-    localStorage.setItem("qt:browserId", id);
-  }
-  return id;
-}
-
 export default function SessionRoom({ sessionId }: { sessionId: string }) {
   const router = useRouter();
   const [playerInfo, setPlayerInfo] = useState<PlayerInfo | null>(null);
   const [session, setSession] = useState<Session | null>(null);
+  useActivity('table', session?.game);
   const [error, setError] = useState<string | null>(null);
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [starting, setStarting] = useState(false);
@@ -74,7 +68,7 @@ export default function SessionRoom({ sessionId }: { sessionId: string }) {
       authUrl: `/api/ably/token?playerId=${encodeURIComponent(playerInfo.playerId)}&sessionId=${encodeURIComponent(sessionId)}`,
     });
     const channel = client.channels.get(`qt:session:${sessionId}`);
-    void channel.subscribe((msg) => {
+    channel.subscribe((msg) => {
       if (
         msg.name === "player:joined" ||
         msg.name === "player:left" ||
@@ -93,7 +87,7 @@ export default function SessionRoom({ sessionId }: { sessionId: string }) {
         const { game } = msg.data as { game: string };
         router.push(`/session/${sessionId}/${game}`);
       }
-    });
+    }).catch(() => {}); // attach rejects if we leave before it connects
     return () => {
       channel.unsubscribe();
       client.close();

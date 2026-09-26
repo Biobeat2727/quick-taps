@@ -5,9 +5,11 @@ import { useRouter } from 'next/navigation';
 import { useMatch } from '@/lib/match/useMatch';
 import { BowlGame } from '@/components/game/bowling-v2/BowlLab';
 import type { BowlingMatch } from '@/types/match';
+import { useActivity } from '@/components/presence/PresenceProvider';
 
 export default function BowlingRoom({ sessionId }: { sessionId: string }) {
   const router = useRouter();
+  useActivity('playing', 'bowling');
   const { meId, match, error, net, deadline } = useMatch<BowlingMatch>(sessionId);
   // Only hand the game new "truth" when the match object itself changes (a reload)
   const sync = useMemo(() => (match ? { seq: match.seq, state: match.state, players: match.players, force: !!match.resync } : undefined), [match]);

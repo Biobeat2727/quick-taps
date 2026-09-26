@@ -15,9 +15,8 @@ _Last updated 2026-09-25._
 - [ ] Locally: `.env.development.local` still forces the in-memory dev Redis (`QT_MEMORY_REDIS=1`) — delete it to hit the real Redis from dev.
 
 ## Next up (suggested order)
-1. **"At the bar now" presence** on the home screen (Ably presence) + tap-to-challenge.
-2. **Legacy cleanup** — delete old bowling/pool code & routes (list in CLAUDE.md "Legacy"), the lobby's `bowl:started` handler, and `public/Neon_sign/` (a whole Vite project inside `public/`).
-3. **At-the-bar gating** (rotating QR token or geofence) — needed before a second bar.
+1. **Legacy cleanup** — delete old bowling/pool code & routes (list in CLAUDE.md "Legacy"), the lobby's `bowl:started` handler, and `public/Neon_sign/` (a whole Vite project inside `public/`).
+2. **At-the-bar gating** (rotating QR token or geofence) — needed before a second bar.
 
 ## Polish backlog
 - **Bowling rework (Davey, 2026-09-25 — do after the to-do list):**
@@ -27,6 +26,7 @@ _Last updated 2026-09-25._
 - Pool: show the remote player's cue swing/aim before their shot plays; optional house rule "sinking opponent's ball ends turn"; bot difficulty option; casual bot fouls a lot (~4/game).
 - Bowling: straight centre hits strike a bit too easily; split detection callouts; pinsetter sweep animation instead of pins snapping back; turkey/double callouts.
 - Both: lobby still says "Waiting for players" styling from marble era — fine, but could show game-specific copy.
+- Presence + challenges (done 2026-09-25): rate-limit challenges (no spam protection yet); anyone can request a lobby token for any device id and read that inbox (challenges only — low stakes; tighten with profiles/gating); maybe a sound/vibrate when a challenge arrives.
 - Leaderboard (done 2026-09-25): all-time / weekly boards; name squatting (anyone can type any name) — solve with profiles later; maybe show the board on a bar TV (projector view).
 - Sound (done 2026-09-25, `lib/audio/sfx.ts`, all synthesized): tune levels/voices from real play on phones; lobby/home UI sounds; ambient bar hum?
 - Shot clock (done 2026-09-25): maybe a host "kick" button for someone who's present but stalling; tune clock lengths from real play.
