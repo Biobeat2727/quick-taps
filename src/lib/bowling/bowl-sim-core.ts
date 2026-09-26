@@ -19,8 +19,6 @@ export interface BowlThrow {
   speed: number;     // m/s at release (real bowlers: 7–9)
   spin: number;      // −1..1 — hook strength, +right
   pinState: boolean[];
-  /** 0 = fresh oil … 1 = late game: the backend dries, the ball hooks earlier and harder. */
-  laneWear?: number;
   /** Scales the per-rack pin variation (0 = perfectly repeatable, for calibration). Default 1. */
   variance?: number;
   rand?: () => number;
@@ -51,14 +49,14 @@ const HIT_MIN = 0.35;
 const HIT_FULL = 40;
 const HIT_GAP_FRAMES = 5; // the same pair can't retrigger faster than this
 
-// Oil pattern: the ball skids straight through the oiled heads, the hook
-// "reads" the dry backend and ramps in, then flattens once the ball reaches the deck.
-const HOOK_START = 8.5;
-const HOOK_FULL = 13.5;
+// The hook ramps in from a third of the way down, so a curved throw visibly
+// sweeps across the lane (a late, sudden hook read as "nothing, then too much").
+const HOOK_START = 4.0;
+const HOOK_FULL = 10.0;
 
 /** Physics tuning knobs — exported so offline calibration scripts can sweep them. */
 export const TUNING = {
-  hookAccel: 1.35,      // m/s² lateral at spin = 1 on the dry backend
+  hookAccel: 0.9,       // m/s² lateral at spin = 1 (≈0.5–0.7 m of break at a normal pace)
   ballDensity: 4.5,     // ball:pin mass ≈ 4.8:1, close to a 15 lb ball vs 3.5 lb pin
   pinRestitution: 0.5,
   pinFriction: 0.2,
@@ -70,11 +68,10 @@ export const TUNING = {
   carryEntryFull: 0.05, // rad of entry angle (~3°) for full carry (0 = angle ignored)
   carryEntryMin: 0.45,  // share of carry a dead-straight ball still gets
   carryJitter: 0.25,    // ± share of carry, per throw
+  pocketAngleWiden: 0.045, // m the pocket's light edge extends for a fully angled ball
   pinSpotJitter: 0.003, // m σ — pinsetters never spot perfectly
   pinTiltJitter: 0.006, // rad σ
   pinFrictionJitter: 0.15, // ± share of pin friction/restitution, per rack
-  wearHookStart: 2.0,   // m the hook point moves toward the foul line at full wear
-  wearHookGain: 0.4,    // extra hook strength at full wear (share)
 };
 
 function gauss(rand: () => number) {
@@ -85,10 +82,6 @@ function gauss(rand: () => number) {
 export function runBowlSim(RAPIER: Rapier, t: BowlThrow): BowlSimResult {
   const rand = t.rand ?? Math.random;
   const vary = t.variance ?? 1;
-  const wear = Math.max(0, Math.min(1, t.laneWear ?? 0));
-  const hookStart = HOOK_START - TUNING.wearHookStart * wear;
-  const hookFull = HOOK_FULL - TUNING.wearHookStart * wear * 0.6;
-  const hookAccel = TUNING.hookAccel * (1 + TUNING.wearHookGain * wear);
   const carryShare = Math.max(0, 1 + (rand() * 2 - 1) * TUNING.carryJitter * vary);
   const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
   world.timestep = 1 / SIM_HZ;
@@ -207,9 +200,9 @@ export function runBowlSim(RAPIER: Rapier, t: BowlThrow): BowlSimResult {
 
     // Hook — lateral push on the dry backend while the ball is still rolling on the lane.
     if (gutterFrame < 0 && bp.y > 0.05 && bp.z < 17.2 && Math.abs(bp.x) < LANE_HALF_WIDTH) {
-      const u = Math.min(1, Math.max(0, (bp.z - hookStart) / (hookFull - hookStart)));
+      const u = Math.min(1, Math.max(0, (bp.z - HOOK_START) / (HOOK_FULL - HOOK_START)));
       const ramp = u * u * (3 - 2 * u);
-      if (ramp > 0) ball.applyImpulse({ x: t.spin * hookAccel * ramp * ballMass * dt, y: 0, z: 0 }, true);
+      if (ramp > 0) ball.applyImpulse({ x: t.spin * TUNING.hookAccel * ramp * ballMass * dt, y: 0, z: 0 }, true);
     }
 
     world.step(events);
@@ -249,7 +242,12 @@ export function runBowlSim(RAPIER: Rapier, t: BowlThrow): BowlSimResult {
       if (pocketQ < 0) {
         const bx = preP.x;
         const ax = Math.abs(bx);
-        pocketQ = ax >= 0.025 && ax <= 0.115 ? 1 : ax < 0.025 ? ax / 0.025 : Math.max(0, 1 - (ax - 0.115) / 0.1);
+        // A ball driving in at an angle has a bigger strike window than a straight
+        // one (as in real bowling) — so a hook forgives a little wobble in the curve.
+        const angIn = Math.max(0, Math.atan2(-Math.sign(bx || 1) * preV.x, Math.max(0.1, preV.z)));
+        const wide = Math.min(1, angIn / Math.max(1e-6, TUNING.carryEntryFull)) * TUNING.pocketAngleWiden;
+        const hi = 0.115 + wide;
+        pocketQ = ax >= 0.025 && ax <= hi ? 1 : ax < 0.025 ? ax / 0.025 : Math.max(0, 1 - (ax - hi) / 0.1);
         impactBallX = bx;
         entry = { x: bx, angle: Math.atan2(-Math.sign(bx || 1) * preV.x, Math.max(0.1, preV.z)) };
         // Entry angle: a ball driving into the pocket at an angle carries; a

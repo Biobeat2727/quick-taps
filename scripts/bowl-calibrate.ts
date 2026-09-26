@@ -1,61 +1,49 @@
 // Offline bowling calibration: npx tsx scripts/bowl-calibrate.ts [throwsPerBowler]
-// Simulated bowlers throw first balls at a full rack; reports strike %, average
+// Simulated thumbs go through the real swipe mapping (mapFlick) and release
+// variance, then throw first balls at a full rack. Reports strike %, average
 // pins, how many different leaves they see, and how often two back-to-back
-// throws produce the exact same leave (the "rigid / repeatable" problem).
+// throws leave exactly the same pins (the old "rigid / repeatable" problem).
 
 import RAPIER from '@dimforge/rapier3d-compat';
 import { runBowlSim } from '../src/lib/bowling/bowl-sim-core';
 import { releaseThrow } from '../src/lib/bowling/bowl-release';
+import { mapFlick } from '../src/components/game/bowling-v2/useSwipeThrow';
 
-const N = Number(process.argv[2] ?? 60);
+const N = Number(process.argv[2] ?? 100);
 const FULL = Array(10).fill(true);
+const MAX_AIM_X = 0.45;
 
-interface Bowler {
-  name: string;
-  /** What the bowler intends, before release error. wear = lane wear 0..1 */
-  intent: (i: number) => { startX: number; direction: number; speed: number; spin: number; wear: number };
-}
+const gauss = () => {
+  const u = Math.max(1e-9, Math.random()), v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+};
 
-// Human thumbs vary a little on their own even when they "repeat" a throw
-const jitter = (s: number) => (Math.random() - 0.5) * 2 * s;
+/** A thumb: where it lines up (world x), how hard it flicks, and how much it curves (screen rad, + = right). */
+interface Thumb { name: string; x: () => number; screensPerSec: () => number; arc: () => number; chord: () => number }
 
-function leaveKey(k: boolean[]) { return k.map((d) => (d ? '.' : 'o')).join(''); }
+const thumbs: Thumb[] = [
+  { name: 'straight, centre, medium flick', x: () => 0, screensPerSec: () => 1.4 + gauss() * 0.3, arc: () => gauss() * 0.08, chord: () => gauss() * 0.03 },
+  { name: 'masher (centre, hardest flick)', x: () => 0, screensPerSec: () => 4 + gauss() * 0.3, arc: () => gauss() * 0.1, chord: () => gauss() * 0.04 },
+  { name: 'hooker (x .30, clear curve)', x: () => 0.3, screensPerSec: () => 1.6 + gauss() * 0.3, arc: () => 0.3 + gauss() * 0.06, chord: () => gauss() * 0.03 },
+  { name: 'hooker, sloppy curve', x: () => 0.3, screensPerSec: () => 1.6 + gauss() * 0.3, arc: () => 0.3 + gauss() * 0.12, chord: () => gauss() * 0.05 },
+  { name: 'hooker at max power', x: () => 0.3, screensPerSec: () => 4 + gauss() * 0.3, arc: () => 0.3 + gauss() * 0.06, chord: () => gauss() * 0.03 },
+  { name: 'big curve (x .42, exaggerated)', x: () => 0.42, screensPerSec: () => 1.6 + gauss() * 0.3, arc: () => 0.75 + gauss() * 0.08, chord: () => gauss() * 0.03 },
+  { name: 'random casual', x: () => (Math.random() - 0.5) * 0.7, screensPerSec: () => 0.8 + Math.random() * 3.4, arc: () => gauss() * 0.3, chord: () => gauss() * 0.08 },
+];
 
 async function main() {
   await RAPIER.init();
-
-  // Find "the spot": the straight max-power board that strikes on a fresh lane
-  // with no release error — what a player discovers and then spams.
-  let spot = 0, bestScore = -1;
-  for (let b = -16; b <= 16; b++) {
-    const x = (b * 1.06) / 39;
-    const r = runBowlSim(RAPIER, { startX: x, direction: 0, speed: 9, spin: 0, pinState: FULL, laneWear: 0, variance: 0 });
-    const n = r.knockedPins.filter(Boolean).length;
-    if (n > bestScore || (n === bestScore && Math.abs(x - 0.06) < Math.abs(spot - 0.06))) { bestScore = n; spot = x; }
-  }
-  console.log(`spot: startX ${spot.toFixed(3)} (${bestScore} pins, no variance)`);
-
-  const bowlers: Bowler[] = [
-    { name: 'masher (spot, max power, straight)', intent: () => ({ startX: spot, direction: 0, speed: 9.99, spin: 0, wear: 0 }) },
-    { name: 'masher late game (wear 0.8)', intent: () => ({ startX: spot, direction: 0, speed: 9.99, spin: 0, wear: 0.8 }) },
-    { name: 'controlled straight (spot, 7.6 m/s)', intent: () => ({ startX: spot, direction: 0, speed: 7.6 + jitter(0.3), spin: 0, wear: 0 }) },
-    { name: 'good hook line (x .27, spin −.55)', intent: () => ({ startX: 0.27, direction: 0, speed: 7.8 + jitter(0.3), spin: -0.55 + jitter(0.05), wear: 0 }) },
-    { name: 'same line late game (wear 0.8)', intent: () => ({ startX: 0.27, direction: 0, speed: 7.8 + jitter(0.3), spin: -0.55 + jitter(0.05), wear: 0.8 }) },
-    { name: 'line adjusted for wear (x .35, d .006)', intent: () => ({ startX: 0.35, direction: 0.006, speed: 7.8 + jitter(0.3), spin: -0.55 + jitter(0.05), wear: 0.8 }) },
-    { name: 'good hook at max power', intent: () => ({ startX: 0.27, direction: 0, speed: 9.99, spin: -0.55 + jitter(0.05), wear: 0 }) },
-    { name: 'random casual (any board, any speed)', intent: () => ({ startX: jitter(0.3), direction: jitter(0.01), speed: 6.5 + Math.random() * 3.4, spin: Math.random() < 0.3 ? jitter(0.8) : 0, wear: Math.random() }) },
-  ];
-
-  for (const b of bowlers) {
+  for (const th of thumbs) {
     let strikes = 0, pins = 0, repeats = 0, gutters = 0;
     const leaves = new Set<string>();
     let prev = '';
     for (let i = 0; i < N; i++) {
-      const it = b.intent(i);
-      const t = releaseThrow({ startX: it.startX, direction: it.direction, speed: it.speed, spin: it.spin }, Math.random);
-      const r = runBowlSim(RAPIER, { ...t, pinState: FULL, laneWear: it.wear });
+      const m = mapFlick(th.chord(), th.arc(), th.screensPerSec());
+      // Screen → world: the camera looks down +Z, so screen-right is −X
+      const intent = { startX: Math.max(-MAX_AIM_X, Math.min(MAX_AIM_X, th.x())), direction: -m.direction, speed: m.speed, spin: -m.spin };
+      const r = runBowlSim(RAPIER, { ...releaseThrow(intent), pinState: FULL });
       const n = r.knockedPins.filter(Boolean).length;
-      const key = leaveKey(r.knockedPins);
+      const key = r.knockedPins.map((d) => (d ? '.' : 'o')).join('');
       if (n === 10) strikes++;
       if (r.gutterFrame >= 0 && n === 0) gutters++;
       pins += n;
@@ -64,7 +52,7 @@ async function main() {
       prev = key;
     }
     console.log(
-      `${b.name.padEnd(40)} strike ${(100 * strikes / N).toFixed(0).padStart(3)}%  avg ${(pins / N).toFixed(1)}  ` +
+      `${th.name.padEnd(34)} strike ${(100 * strikes / N).toFixed(0).padStart(3)}%  avg ${(pins / N).toFixed(1)}  ` +
       `leaves ${String(leaves.size).padStart(2)}  same-as-last ${(100 * repeats / (N - 1)).toFixed(0).padStart(3)}%  gutter ${(100 * gutters / N).toFixed(0)}%`,
     );
   }

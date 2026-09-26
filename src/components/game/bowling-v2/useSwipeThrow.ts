@@ -4,11 +4,13 @@ import { useEffect, useLayoutEffect, useRef } from 'react';
 
 // Swipe-to-bowl gesture, in *screen* terms (+x = right on screen).
 // The caller maps to world space (the camera looks down +Z, so screen-right is −X).
+// Modelled on the popular swipe-bowling games: drag the ball freely, and the
+// curve of your swipe is the hook — the wider the curve, the stronger it hooks.
 //
-//   drag sideways   → line up, snapping board by board (the precise part)
-//   flick upward    → release. Forgiving by design: any deliberate flick is a
-//                     strike-capable speed, and a crooked flick only nudges the line
-//   clearly curve it → hook. A thumb's natural arc reads as straight
+//   drag sideways → line up; the ball follows your finger (a light tick per board)
+//   flick upward  → release; flick speed = ball speed, flick angle nudges the line
+//   curve it      → hook. A thumb's natural arc (under ~10°) stays straight;
+//                   a clear curve is a reliable standard hook; exaggerate it for more
 
 export interface SwipeResult {
   aim: number;       // −1..1 screen-space lane position at release
@@ -22,39 +24,77 @@ interface Pt { x: number; y: number; t: number }
 // Lane boards: 39 across 1.06 m. Aim is −1..1 over ±0.45 m of lane.
 const BOARD_W = 1.06 / 39;
 const AIM_RANGE_M = 0.45;
-export const snapAimToBoard = (aim: number) =>
-  (Math.round((aim * AIM_RANGE_M) / BOARD_W) * BOARD_W) / AIM_RANGE_M;
+const boardOf = (aim: number) => Math.round((aim * AIM_RANGE_M) / BOARD_W);
 
 /**
  * Flick → throw. Pure so it can be calibrated offline against simulated thumbs.
  *  chord: heading of the whole flick (rad, +right), arc: late heading − early heading,
  *  screensPerSec: release speed of the flick in screen-heights per second.
  */
+const smoothstep = (e0: number, e1: number, x: number) => {
+  const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
+};
+
 export function mapFlick(chord: number, arc: number, screensPerSec: number) {
   // Speed: 6.4 m/s floor (≈14 mph — already carries), up to 10 m/s for a hard
   // flick. Above ~7 m/s the release starts to wander (lib/bowling/bowl-release):
   // power is a trade against accuracy, not a free strike.
   const u = Math.max(0, Math.min(1, (screensPerSec - 0.5) / 3));
   const speed = 6.4 + Math.sqrt(u) * 3.6;
-  // Direction: small nudge only; ±5° of flick tilt is ignored entirely.
-  const DEAD = 0.09;
+  // Direction: the flick's angle nudges the line; ±3° of tilt is ignored.
+  const DEAD = 0.05;
   const tilt = Math.sign(chord) * Math.max(0, Math.abs(chord) - DEAD);
-  const direction = Math.max(-0.018, Math.min(0.018, tilt * 0.03));
-  // Hook: a natural thumb arc (up to ~20°) is straight; beyond that, ramps to full.
-  const ARC_DEAD = 0.35;
-  const mag = Math.max(0, Math.abs(arc) - ARC_DEAD) / 0.8;
-  const spin = Math.sign(arc) * Math.min(1, mag);
+  const direction = Math.max(-0.03, Math.min(0.03, tilt * 0.06));
+  // Hook, with a plateau so a normal curve is reliable. (`arc` compares the
+  // stroke's late heading with its early one, so it reads about half of the
+  // stroke's total turn — a visibly curved swipe measures ~0.2.)
+  //   under ~0.10  → straight (a thumb's natural wobble)
+  //   ~0.20–0.45   → the standard hook — the same every time, so a wobbly
+  //                  curve doesn't scatter the ball
+  //   past ~0.45   → an exaggerated curve adds more, up to full hook at 0.8
+  const a = Math.abs(arc);
+  const spin = Math.sign(arc) * (0.45 * smoothstep(0.1, 0.2, a) + 0.55 * smoothstep(0.45, 0.8, a));
   return { direction, speed, spin };
 }
 
 const LOCK_UP_PX = 28;      // upward travel that turns a drag into a throw
 const MIN_THROW_PX = 70;
 
+// How curved a stroke is so far (late heading − early heading), for the trail
+const heading = (a: Pt, b: Pt) => Math.atan2(b.x - a.x, a.y - b.y);
+function arcOf(stroke: Pt[]) {
+  if (stroke.length < 4) return 0;
+  const first = stroke[0], last = stroke[stroke.length - 1];
+  const mid = stroke[Math.floor(stroke.length / 2)], late = stroke[Math.floor(stroke.length * 0.66)];
+  return heading(late, last) - heading(first, mid);
+}
+
+/**
+ * Draw the throw stroke into an SVG polyline (DOM-direct — never React state on
+ * pointermove): ice while straight, magenta once the curve is a hook.
+ */
+function paintTrail(line: SVGPolylineElement | null | undefined, stroke: Pt[], rect: DOMRect | null) {
+  if (!line || !rect) return;
+  line.setAttribute('points', stroke.map((p) => `${(p.x - rect.left).toFixed(1)},${(p.y - rect.top).toFixed(1)}`).join(' '));
+  const hooked = Math.abs(arcOf(stroke)) > 0.13; // past the straight zone of mapFlick
+  line.style.stroke = line.style.color = hooked ? '#ff3fd0' : '#9bf6ff';
+  line.style.transition = 'none';
+  line.style.opacity = '0.9';
+}
+
+function fadeTrail(line: SVGPolylineElement | null | undefined) {
+  if (!line) return;
+  line.style.transition = 'opacity 0.6s ease-out';
+  line.style.opacity = '0';
+}
+
 export function useSwipeThrow(
   el: React.RefObject<HTMLElement | null>,
   enabled: boolean,
   onAim: (aim: number) => void,
   onThrow: (r: SwipeResult) => void,
+  trail?: React.RefObject<SVGPolylineElement | null>,
 ) {
   const cb = useRef({ onAim, onThrow });
   useLayoutEffect(() => { cb.current = { onAim, onThrow }; });
@@ -71,6 +111,7 @@ export function useSwipeThrow(
     let lowestY = 0;
 
     const pt = (e: PointerEvent): Pt => ({ x: e.clientX, y: e.clientY, t: performance.now() });
+    let rect: DOMRect | null = null;
 
     const onDown = (e: PointerEvent) => {
       down = true;
@@ -81,12 +122,14 @@ export function useSwipeThrow(
       aim0Raw = rawAim;
       x0 = p.x;
       lowestY = p.y;
+      rect = node.getBoundingClientRect();
     };
 
     const onMove = (e: PointerEvent) => {
       if (!down) return;
       const p = pt(e);
       pts.push(p);
+      if (lockIdx >= 0) paintTrail(trail?.current, pts.slice(lockIdx), rect);
       if (lockIdx < 0) {
         lowestY = Math.max(lowestY, p.y);
         if (lowestY - p.y > LOCK_UP_PX) {
@@ -96,13 +139,11 @@ export function useSwipeThrow(
           lockIdx = li;
         } else {
           const w = node.clientWidth;
-          const raw = Math.max(-1, Math.min(1, aim0Raw + ((p.x - x0) / w) * 1.7));
-          const snapped = snapAimToBoard(raw);
-          if (snapped !== aimRef.current) {
-            aimRef.current = snapped;
-            cb.current.onAim(snapped);
-            try { navigator.vibrate?.(3); } catch {}
-          }
+          const raw = Math.max(-1, Math.min(1, aim0Raw + ((p.x - x0) / w) * 1.6));
+          // Smooth: the ball follows the finger; a light tick marks each board
+          if (boardOf(raw) !== boardOf(aimRef.current)) { try { navigator.vibrate?.(3); } catch {} }
+          aimRef.current = raw;
+          cb.current.onAim(raw);
           rawAim = raw;
         }
       }
@@ -112,6 +153,7 @@ export function useSwipeThrow(
       if (!down) return;
       down = false;
       pts.push(pt(e));
+      fadeTrail(trail?.current);
       const stroke = lockIdx >= 0 ? pts.slice(lockIdx) : [];
       const first = stroke[0], last = stroke[stroke.length - 1];
       if (!first || first.y - last.y < MIN_THROW_PX) return;
@@ -125,11 +167,8 @@ export function useSwipeThrow(
       const screensPerSec = (dy / h) / (dt / 1000);
 
       // Whole-flick heading, and how much the end bends away from the start
-      const mid = stroke[Math.floor(stroke.length / 2)];
-      const late = stroke[Math.floor(stroke.length * 0.66)];
-      const heading = (a: Pt, b: Pt) => Math.atan2(b.x - a.x, a.y - b.y);
       const chord = heading(first, last);
-      const arc = heading(late, last) - heading(first, mid);
+      const arc = arcOf(stroke);
 
       cb.current.onThrow({ aim: aimRef.current, ...mapFlick(chord, arc, screensPerSec) });
     };
@@ -144,7 +183,7 @@ export function useSwipeThrow(
       node.removeEventListener('pointerup', onUp);
       node.removeEventListener('pointercancel', onUp);
     };
-  }, [el, enabled]);
+  }, [el, enabled, trail]);
 
   return aimRef;
 }

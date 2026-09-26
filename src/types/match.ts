@@ -46,7 +46,6 @@ export interface BowlRecording {
   knocked: boolean[];  // [10] — spectators need it for the callout
   speed: number;       // m/s
   spin: number;        // world spin, for the HOOK ←/→ readout
-  entry?: { x: number; angle: number } | null; // where it met the pins — spectators' POCKET/HIGH/LIGHT read
   hits?: [number, 0 | 1 | 2 | 3 | 4, number, number][]; // collisions for sound: [frame, kind, strength, x]
 }
 

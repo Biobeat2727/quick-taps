@@ -13,7 +13,7 @@ export interface ReleaseIntent {
 }
 
 export const RELEASE = {
-  controlSpeed: 7.0,   // m/s — at or below this the release is (almost) exact
+  controlSpeed: 8.3,   // m/s — a normal flick is accurate; only a hard one wanders
   maxSpeed: 10.0,
   dirErrMin: 0.0008,   // rad σ at controlSpeed (≈1.4 cm at the pins)
   dirErrMax: 0.006,    // rad σ at maxSpeed (≈10 cm at the pins)

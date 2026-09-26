@@ -12,7 +12,6 @@ import { BowlScene, playbackEndFrame, type Hype, type Playback } from './BowlSce
 import { useSwipeThrow, type SwipeResult } from './useSwipeThrow';
 import { ShotClock } from '../ShotClock';
 import { releaseThrow } from '@/lib/bowling/bowl-release';
-import { laneWear, laneCondition, pocketRead } from '@/lib/bowling/bowl-read';
 import { SoundToggle } from '../SoundToggle';
 import { TonightRank } from '@/components/leaderboard/TonightRank';
 import { bowlSfx, type Rumble } from '@/lib/audio/sfx';
@@ -38,13 +37,7 @@ function freshState(ids: string[]): BowlingGameState {
   };
 }
 
-type Callout = { text: string; tone: 'strike' | 'spare' | 'gutter' | 'count'; who?: string; sub?: string } | null;
-
-const LANE_NOTE = {
-  fresh: '',
-  drying: "Lane's drying — the ball will hook more",
-  dry: 'Lane is dry — big hook, move your line',
-} as const;
+type Callout = { text: string; tone: 'strike' | 'spare' | 'gutter' | 'count'; who?: string } | null;
 
 const totalOf = (s: BowlingGameState, id: string) =>
   computeFrameScores((s.throwHistory[id] ?? []).flat()).filter((v) => v != null).pop() ?? 0;
@@ -135,7 +128,6 @@ export function BowlGame({ players: initialPlayers, meId, hostId, initial, initi
   const [ready, setReady] = useState(false);
   const [remoteBusy, setRemoteBusy] = useState(false);
   const [release, setRelease] = useState<{ mph: string; hook: string; who: string } | null>(null);
-  const [laneNote, setLaneNote] = useState<string | null>(null);
   const rapier = useRef<typeof RAPIER_T | null>(null);
   const aimXRef = useRef(0);
   const surface = useRef<HTMLDivElement>(null);
@@ -144,7 +136,7 @@ export function BowlGame({ players: initialPlayers, meId, hostId, initial, initi
   const playersRef = useRef(players);
   useLayoutEffect(() => { playersRef.current = players; }, [players]);
   const seqRef = useRef(initialSeq);
-  const pending = useRef<{ knocked: boolean[]; hype: Hype; next?: BowlingGameState; who: string; entry?: { x: number; angle: number } | null } | null>(null);
+  const pending = useRef<{ knocked: boolean[]; hype: Hype; next?: BowlingGameState; who: string } | null>(null);
 
   const ids = players.map((p) => p.id);
   const over = isGameComplete(game, ids);
@@ -169,18 +161,15 @@ export function BowlGame({ players: initialPlayers, meId, hostId, initial, initi
     const R = rapier.current;
     if (!R || playback || pending.current) return;
     const g = gameRef.current;
-    // Power vs accuracy: the harder the flick, the more the release wanders.
-    // Everyone at the table bowls on the same (wearing) lane.
+    // Power vs accuracy: the harder the flick, the more the release wanders
     const r = releaseThrow({ startX: t.startX, direction: t.direction, speed: t.speed, spin: t.spin });
-    const wear = laneWear(g, playersRef.current.length);
-    const sim = runBowlSim(R, { ...r, pinState: g.pinState, laneWear: wear });
+    const sim = runBowlSim(R, { ...r, pinState: g.pinState });
     const hype = hypeFor(sim.knockedPins, g.pinState, sim.impactFrame);
-    pending.current = { knocked: sim.knockedPins, hype, who: meId, entry: sim.entry };
+    pending.current = { knocked: sim.knockedPins, hype, who: meId };
     if (net) {
       const rec: BowlRecording = {
         numFrames: sim.numFrames, ball: f32ToB64(sim.ballFrames), pins: f32ToB64(sim.pinFrames),
         impactFrame: sim.impactFrame, gutterFrame: sim.gutterFrame, knocked: sim.knockedPins, speed: r.speed, spin: r.spin,
-        entry: sim.entry,
         hits: sim.hits,
       };
       const payload: BowlShotPayload = { knocked: sim.knockedPins, speed: r.speed, spin: r.spin, rec };
@@ -194,7 +183,8 @@ export function BowlGame({ players: initialPlayers, meId, hostId, initial, initi
     bowl({ startX: -r.aim * MAX_AIM_X, direction: -r.direction, speed: r.speed, spin: -r.spin });
   }, [bowl]);
 
-  useSwipeThrow(surface, ready && myTurn, (aim) => { aimXRef.current = -aim * MAX_AIM_X; }, onSwipe);
+  const trailRef = useRef<SVGPolylineElement>(null);
+  useSwipeThrow(surface, ready && myTurn, (aim) => { aimXRef.current = -aim * MAX_AIM_X; }, onSwipe, trailRef);
 
   const onImpact = useCallback(() => {
     const h = pending.current?.hype;
@@ -225,27 +215,16 @@ export function BowlGame({ players: initialPlayers, meId, hostId, initial, initi
       : n === standing && n > 0 ? { text: 'SPARE!', tone: 'spare' }
       : n === 0 ? { text: p.hype === 'gutter' ? 'GUTTER' : 'MISS', tone: 'gutter' }
       : { text: String(n), tone: 'count' };
-    // First ball: say where it met the pins, so a miss teaches you which way to move
-    const pr = firstBall ? pocketRead(p.entry) : null;
-    const sub = pr ? `${pr.read}${pr.read === 'POCKET' || pr.angleDeg > 0.5 ? ` · ${pr.angleDeg.toFixed(1)}°` : ''}` : undefined;
-    setCallout({ ...c!, who: p.who === meId ? undefined : nameOf(p.who), sub });
+    setCallout({ ...c!, who: p.who === meId ? undefined : nameOf(p.who) });
     rollRef.current?.stop(0.2);
     if (c.tone === 'strike') bowlSfx.strike();
     else if (c.tone === 'spare') bowlSfx.spare();
     else if (c.tone === 'gutter') { if (p.hype === 'gutter') bowlSfx.gutter(); bowlSfx.miss(); }
     // Remote throws carry the server's next state; my own apply the same rules locally
     const next = p.next ?? nextTurn(g, p.knocked, playersRef.current.map((q) => q.id));
-    // Announce when the lane changes character — the wear penalty is only fair if you're told
-    const nPlayers = playersRef.current.length;
-    const condNow = laneCondition(laneWear(g, nPlayers)), condNext = laneCondition(laneWear(next, nPlayers));
     setTimeout(() => {
       pending.current = null;
       setCallout(null);
-      if (condNext !== condNow && LANE_NOTE[condNext]) {
-        const note = LANE_NOTE[condNext];
-        setLaneNote(note);
-        setTimeout(() => setLaneNote((cur) => (cur === note ? null : cur)), 3800);
-      }
       setGame(next);
       setPlayback(null);
       setRelease(null);
@@ -292,11 +271,11 @@ export function BowlGame({ players: initialPlayers, meId, hostId, initial, initi
           const sim: BowlSimResult = {
             numFrames: rec.numFrames, ballFrames: b64ToF32(rec.ball), pinFrames: b64ToF32(rec.pins),
             knockedPins: rec.knocked, impactFrame: rec.impactFrame, gutterFrame: rec.gutterFrame,
-            entry: rec.entry ?? null,
+            entry: null, // only the shooter's sim uses it (carry)
             hits: rec.hits ?? [],
           };
           const hype = hypeFor(rec.knocked, g.pinState, rec.impactFrame);
-          pending.current = { knocked: rec.knocked, hype, next: e.match.state, who: e.actorId, entry: rec.entry };
+          pending.current = { knocked: rec.knocked, hype, next: e.match.state, who: e.actorId };
           startPlayback(sim, hype, rec.speed, rec.spin, e.actorId);
         }
       }
@@ -331,8 +310,6 @@ export function BowlGame({ players: initialPlayers, meId, hostId, initial, initi
   const active = game.activePlayerId;
   const featured = myTurn || !players.some((p) => p.id === active) ? meId : active;
   const standings = [...players].sort((a, b) => totalOf(game, b.id) - totalOf(game, a.id));
-  const laneCond = laneCondition(laneWear(game, players.length));
-  const laneColor = laneCond === 'fresh' ? 'rgba(63,242,255,0.75)' : laneCond === 'drying' ? 'rgba(255,180,36,0.85)' : 'rgba(255,90,90,0.9)';
 
   return (
     <div className="fixed inset-0 overflow-hidden select-none" style={{ background: '#07040c' }}>
@@ -347,6 +324,14 @@ export function BowlGame({ players: initialPlayers, meId, hostId, initial, initi
         onRoll={onRoll}
       />
       <div ref={surface} className="absolute inset-0" style={{ touchAction: 'none' }} />
+      {/* Swipe trail: shows the flick you just gave — ice when straight, magenta when it hooks */}
+      <svg className="absolute inset-0 w-full h-full pointer-events-none" aria-hidden>
+        <polyline
+          ref={trailRef}
+          fill="none" strokeWidth={6} strokeLinecap="round" strokeLinejoin="round"
+          style={{ opacity: 0, filter: 'drop-shadow(0 0 6px currentColor)' }}
+        />
+      </svg>
 
       <SoundToggle className="absolute left-2 z-20" style={{ top: `calc(max(10px, env(safe-area-inset-top)) + ${players.length > 1 ? 118 : 88}px)` }} />
 
@@ -400,16 +385,13 @@ export function BowlGame({ players: initialPlayers, meId, hostId, initial, initi
               <p className="text-[12px] tracking-[0.22em] uppercase" style={{ color: 'rgba(210,195,255,0.75)' }}>
                 {players.length > 1 ? 'Your turn · ' : ''}Drag to line up · Flick up to bowl
               </p>
-              <p className="text-[11px] mt-1" style={{ color: 'rgba(210,195,255,0.45)' }}>Bend your flick hard to hook it · a smooth flick beats a hard one</p>
+              <p className="text-[11px] mt-1" style={{ color: 'rgba(210,195,255,0.45)' }}>Bend your flick hard to hook it</p>
             </>
           ) : (
             <p className="text-[12px] tracking-[0.22em] uppercase" style={{ color: 'rgba(255,154,232,0.85)' }}>
               {nameOf(active)} is up…
             </p>
           )}
-          <p className="mt-1.5 text-[10px] font-bold tracking-[0.3em] uppercase" style={{ color: laneColor }}>
-            Lane · {laneCond}
-          </p>
         </div>
       )}
       {!ready && (
@@ -418,23 +400,10 @@ export function BowlGame({ players: initialPlayers, meId, hostId, initial, initi
         </div>
       )}
 
-      {laneNote && !callout && (
-        <div className="absolute inset-x-0 flex justify-center pointer-events-none px-6" style={{ top: '34%' }}>
-          <span className="rounded-full px-4 py-2 text-[13px] font-bold tracking-[0.12em] uppercase text-center" style={{ background: 'rgba(12,6,24,0.8)', color: '#ffb424', border: '1px solid rgba(255,180,36,0.5)', animation: 'bowlIn .7s cubic-bezier(.2,1.4,.3,1) both' }}>
-            {laneNote}
-          </span>
-        </div>
-      )}
-
       {callout && (
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
           {callout.who && <span className="text-[12px] tracking-[0.3em] uppercase mb-1" style={{ color: 'rgba(230,220,255,0.85)' }}>{callout.who}</span>}
           <span key={throwId} className={`bowl-callout bowl-callout-${callout.tone} font-display`}>{callout.text}</span>
-          {callout.sub && (
-            <span className="mt-2 text-[13px] font-bold tracking-[0.3em] uppercase" style={{ color: callout.sub.startsWith('POCKET') ? '#7CFC9B' : '#ffb424', textShadow: '0 0 10px rgba(0,0,0,0.8)' }}>
-              {callout.sub}
-            </span>
-          )}
         </div>
       )}
 

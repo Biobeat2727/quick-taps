@@ -22,13 +22,13 @@ _Last updated 2026-09-25._
 - [ ] Locally: `.env.development.local` still forces the in-memory dev Redis (`QT_MEMORY_REDIS=1`) — delete it to hit the real Redis from dev.
 
 ## Next up (suggested order)
-1. **Bowling rework — built 2026-09-25, awaiting Davey's play-test.** Skill model + physics-driven sound (see docs/BOWLING_V2.md). Follow-ups: tune from real play; wide balls still strike 20–35%.
+1. **Bowling rework — second pass 2026-09-25, awaiting play-test.** Dropped lane wear + pocket readout; smooth positioning, responsive plateau hook, swipe trail; physics-driven sound (see docs/BOWLING_V2.md).
 2. **UI / professional pass** — audit every screen (name, home, lobby, games, results, leaderboard); consistent design system, motion, loading/empty/error states, haptics.
 3. **Profiles + the dopamine loop** — persistent identity (fixes name spoofing on the board), stats and history, XP/levels, streaks, achievements, nightly champion.
 4. **Marble race pass** — once Davey has feedback: trim the long sections, add more moments.
 
 ## Polish backlog
-- **Bowling rework (Davey, 2026-09-25 — do after the to-do list):**
+- **Bowling rework (Davey, 2026-09-25) — original request; status in Next up #1. First pass added lane wear + a POCKET readout; both rejected as niche fluff and removed:**
   - *Sound is bland and pre-queued.* The pin crash is a canned burst fired at impact, not driven by the physics. Make it physics-based: emit per-contact events from the sim (ball→pin, pin→pin, pin→lane/kickback, with impulse), and voice each one (like pool's ball events), plus a richer roll (lane boards, speed/hook-dependent) and pin-deck rattle.
   - *Gameplay is too rigid/repeatable.* Find a good spot, throw full speed, and you get the identical strike with identical pin action every time. Needs variance and skill depth: e.g. per-throw release noise that grows with speed (power vs accuracy trade-off), lane oil/transition that changes as the game goes on, pin deflection/scatter randomness, and a hook that rewards touch over max speed.
 - Marble: more maps (registry in `lib/marble/maps`; pick per race or let the host choose); bigger fields (8–12 marbles); recording is ~70 KB/marble — quantize to Int16 if Redis size becomes an issue.
