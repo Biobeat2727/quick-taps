@@ -16,7 +16,7 @@ Cosmic-neon 10-frame bowling. Physics (Rapier) runs on the bowler's phone for ze
 ## Physics tuning (calibrated offline)
 - `ballDensity 4.5` (≈4.8:1 ball:pin mass), `pinBellyR 0.0605` (real belly), **`carry 0.7`** — on a pocket hit each pin, when first set moving, is guaranteed a share of lateral motion away from the ball's line (rigid capsules otherwise get shoved straight back and leave 6-10 / 3-6-10). Scaled by pocket quality, so off-target throws gain nothing. Result: ~60–70% strikes on pocket hits.
 - Hook: lateral impulse ramps in on the "dry backend" (z 8.5 → 13.5 m), `hookAccel 1.35`.
-- Pin compound collider (flat base + belly + neck capsules) — see legacy `docs/BOWLING.md` "Pin Physics" for why.
+- Pin compound collider (flat base + belly + neck capsules) — the reasoning lived in the removed v1 `docs/BOWLING.md` ("Pin Physics"); see git history before the legacy cleanup.
 
 ## Controls (`mapFlick`)
 Drag sideways = line up, snapping per lane board (39 boards, haptic tick). Flick up = bowl: speed 6.4–9 m/s (strong floor — any deliberate flick can strike), direction is a small nudge with a ±5° dead zone (±0.018 rad max), hook only past a ~20° bend (natural thumb arc = straight). mph + STRAIGHT/HOOK readout after release.

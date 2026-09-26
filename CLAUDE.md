@@ -18,7 +18,7 @@ Sister products:
 - The git root **is** `quick-taps/` (it used to be a subfolder of `C:/Users/davey` — that's no longer true). Remote: `github.com/Biobeat2727/quick-taps`, branch `main`.
 - Vercel auto-deploys on push to `main`. Production: https://quick-taps.vercel.app
 - Vercel project settings: Root Directory must be **blank** (repo root). Recommended Function Region: Portland `pdx1`, with Redis in Oregon `us-west-2` (colocate functions + Redis).
-- Don't commit `.claude/settings.local.json` or the `public/Neon_sign/` line-ending noise.
+- Don't commit `.claude/settings.local.json`.
 
 ## Tech stack
 - **Framework**: Next.js 16 (App Router), React 19, TypeScript
@@ -37,14 +37,13 @@ Sister products:
 ## Games
 | Game | Status | Doc |
 |---|---|---|
-| **Marble Race** | Multiplayer 3D, streamer-style maps (Neon Summit), chase cam, server-sim + replay | Section below (`docs/Marble_race.md` is the legacy 2D spec) |
+| **Marble Race** | Multiplayer 3D, streamer-style maps (Neon Summit), chase cam, server-sim + replay | Section below |
 | **Bowling (v2)** | Cosmic-neon, swipe-to-bowl, on-phone physics, multiplayer | `docs/BOWLING_V2.md` |
 | **Pool (v2)** | Neon 7-ft bar box, custom 2D physics, 8-ball rules, NPC bot, multiplayer | `docs/POOL_V2.md` |
 
 Turn-based multiplayer (bowling, pool) shares one match system: `docs/MULTIPLAYER.md`.
 
 **Lab routes (solo, no network — best for iterating):** `/bowl-lab`, `/pool-lab`, `/marble-lab` (current map; `?n=8&seed=…&t=48&projector`), `/marble-classic` (archived original 3D map).
-**Legacy (superseded, safe to delete once confirmed unused):** `/bowl-test`, `/pool-test`, `src/components/game/bowling/*`, `src/components/game/pool/*`, `src/lib/physics/simulate-bowling.ts`, `simulate-pool.ts`, `src/lib/pool/pool-logic.ts`, `src/types/pool.ts`, API routes `start-bowling`, `bowl`, `bowl/recording`, `/api/*-test`, and the lobby's `bowl:started` handler.
 
 ## Key concepts
 - No host role beyond "first human starts the game / rematches"

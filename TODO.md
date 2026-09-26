@@ -15,8 +15,7 @@ _Last updated 2026-09-25._
 - [ ] Locally: `.env.development.local` still forces the in-memory dev Redis (`QT_MEMORY_REDIS=1`) — delete it to hit the real Redis from dev.
 
 ## Next up (suggested order)
-1. **Legacy cleanup** — delete old bowling/pool code & routes (list in CLAUDE.md "Legacy"), the lobby's `bowl:started` handler, and `public/Neon_sign/` (a whole Vite project inside `public/`).
-2. **At-the-bar gating** (rotating QR token or geofence) — needed before a second bar.
+1. **At-the-bar gating** (rotating QR token or geofence) — needed before a second bar.
 
 ## Polish backlog
 - **Bowling rework (Davey, 2026-09-25 — do after the to-do list):**

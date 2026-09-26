@@ -73,36 +73,7 @@ export interface GameStartedMessage {
   name: "game:started";
   data: {
     sessionId: string;
-    mode: '2d' | '3d';
     seed: number;
-  };
-}
-
-// ── Bowling messages ──────────────────────────────────────────────────────────
-
-import type { BowlingGameState } from '@/types/bowling';
-
-export interface BowlStartedMessage {
-  name: "bowl:started";
-  data: {
-    sessionId: string;
-  };
-}
-
-export interface BowlThrowMessage {
-  name: "bowl:throw";
-  data: {
-    playerId: string;
-    throwIndex: number;
-    knockedPins: boolean[];
-    gameState: BowlingGameState;
-  };
-}
-
-export interface BowlGameOverMessage {
-  name: "bowl:game:over";
-  data: {
-    finalScores: Record<string, number>;
   };
 }
 
@@ -113,7 +84,4 @@ export type SessionMessage =
   | PlayerJoinedMessage
   | PlayerLeftMessage
   | PlayerColorChangedMessage
-  | GameStartedMessage
-  | BowlStartedMessage
-  | BowlThrowMessage
-  | BowlGameOverMessage;
+  | GameStartedMessage;

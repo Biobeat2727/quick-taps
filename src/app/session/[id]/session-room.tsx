@@ -80,9 +80,6 @@ export default function SessionRoom({ sessionId }: { sessionId: string }) {
         const { seed } = msg.data as { sessionId: string; seed: number };
         router.push(`/session/${sessionId}/race?seed=${seed}`);
       }
-      if (msg.name === "bowl:started") {
-        router.push(`/session/${sessionId}/bowling`);
-      }
       if (msg.name === "match:started") {
         const { game } = msg.data as { game: string };
         router.push(`/session/${sessionId}/${game}`);
