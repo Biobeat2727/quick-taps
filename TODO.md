@@ -2,6 +2,13 @@
 
 _Last updated 2026-09-25._
 
+## Direction (Davey, 2026-09-25)
+- **Pool is the benchmark** — it's legitimately fun; next is wrapping it in a dopamine loop.
+- **Bowling** should reach pool's level: the rework below (physics-driven sound, less repeatable play).
+- **Marble race** is close but feels lifeless — some sections too long, not enough excitement. Davey is gathering feedback before changes.
+- **Focus now:** polish, the bowling rework, a sharper UI, **profiles** (no longer deferred), and a professional feel across the whole app.
+- **Deferred:** at-the-bar gating — only if the app gets popular.
+
 ## Current state
 - **Marble Race** — multiplayer 3D on the new streamer-style map system (Neon Summit: pachinko, spinners, jumps, helix, boxing-glove gauntlet), chase cam, NPC fill, rematch. 2D removed; original 3D map archived at `/marble-classic`.
 - **Bowling v2** — cosmic neon, swipe-to-bowl, on-phone Rapier, calibrated pin carry, multiplayer up to 6. `docs/BOWLING_V2.md`
@@ -15,7 +22,10 @@ _Last updated 2026-09-25._
 - [ ] Locally: `.env.development.local` still forces the in-memory dev Redis (`QT_MEMORY_REDIS=1`) — delete it to hit the real Redis from dev.
 
 ## Next up (suggested order)
-1. **At-the-bar gating** (rotating QR token or geofence) — needed before a second bar.
+1. **Bowling rework — built 2026-09-25, awaiting Davey's play-test.** Skill model + physics-driven sound (see docs/BOWLING_V2.md). Follow-ups: tune from real play; wide balls still strike 20–35%.
+2. **UI / professional pass** — audit every screen (name, home, lobby, games, results, leaderboard); consistent design system, motion, loading/empty/error states, haptics.
+3. **Profiles + the dopamine loop** — persistent identity (fixes name spoofing on the board), stats and history, XP/levels, streaks, achievements, nightly champion.
+4. **Marble race pass** — once Davey has feedback: trim the long sections, add more moments.
 
 ## Polish backlog
 - **Bowling rework (Davey, 2026-09-25 — do after the to-do list):**
@@ -32,4 +42,4 @@ _Last updated 2026-09-25._
 - Session TTL is 10 min idle (heartbeat keeps it alive); match TTL 30 min.
 
 ## Deferred (by decision)
-- Player profiles (see memory: vision) — not yet.
+- At-the-bar gating (rotating QR token or geofence) — only if the app gets popular.

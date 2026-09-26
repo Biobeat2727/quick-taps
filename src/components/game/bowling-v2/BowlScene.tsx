@@ -36,6 +36,10 @@ interface SceneProps {
   throwId: number;
   onImpact: () => void;
   onEnd: () => void;
+  /** Each recorded collision as playback reaches it (drives the pin sounds). */
+  onHit?: (h: BowlSimResult['hits'][number]) => void;
+  /** Per frame while the ball is on the lane: its distance down the lane and speed (m/s). */
+  onRoll?: (z: number, speed: number) => void;
 }
 
 /** Last frame worth watching: pins have had their moment, or the ball is gone. */
@@ -139,7 +143,7 @@ function createBurst() {
 // ── Director: playback, camera, juice ──────────────────────────────────────
 
 function Director({
-  aimXRef, playback, pinState, throwId, onImpact, onEnd, fx,
+  aimXRef, playback, pinState, throwId, onImpact, onEnd, onHit, onRoll, fx,
   ballRef, pinRefs, shadowRef, ballLightRef, chaseRef, bloomRef, caRef, burst, guide,
 }: SceneProps & {
   fx: Fx;
@@ -154,7 +158,7 @@ function Director({
   guide: ReturnType<typeof createGuide>;
 }) {
   const { camera } = useThree();
-  const st = useRef({ t: 0, scale: 1, impactFired: false, ended: false, shake: 0, kick: 0, rainbow: 0, idle: 0 });
+  const st = useRef({ t: 0, scale: 1, impactFired: false, ended: false, shake: 0, kick: 0, rainbow: 0, idle: 0, hitIdx: 0 });
   const camPos = useRef(new THREE.Vector3(0, 1.05, -2.1));
   const camLook = useRef(new THREE.Vector3(0, -1.8, 11));
   const tmpA = useMemo(() => new THREE.Quaternion(), []);
@@ -162,11 +166,13 @@ function Director({
   const v = useMemo(() => new THREE.Vector3(), []);
   const onImpactRef = useRef(onImpact);
   const onEndRef = useRef(onEnd);
-  useEffect(() => { onImpactRef.current = onImpact; onEndRef.current = onEnd; });
+  const onHitRef = useRef(onHit);
+  const onRollRef = useRef(onRoll);
+  useEffect(() => { onImpactRef.current = onImpact; onEndRef.current = onEnd; onHitRef.current = onHit; onRollRef.current = onRoll; });
 
   // New throw → reset the clock
   useEffect(() => {
-    Object.assign(st.current, { t: 0, scale: 1, impactFired: false, ended: false });
+    Object.assign(st.current, { t: 0, scale: 1, impactFired: false, ended: false, hitIdx: 0 });
     if (!playback) st.current.rainbow = 0;
   }, [playback, throwId]);
 
@@ -190,6 +196,15 @@ function Director({
 
       const f = Math.min(s.t * SIM_HZ, endFrame);
       const i0 = Math.floor(f), i1 = Math.min(i0 + 1, sim.numFrames - 1), a = f - i0;
+
+      // Sound: collisions as playback reaches them (slow-mo stretches them too),
+      // and the roll's speed while the ball is still on the lane
+      const hits = sim.hits;
+      while (s.hitIdx < hits.length && hits[s.hitIdx][0] <= f) onHitRef.current?.(hits[s.hitIdx++]);
+      {
+        const zb0 = sim.ballFrames[i0 * BALL_STRIDE + 2], zb1 = sim.ballFrames[i1 * BALL_STRIDE + 2];
+        if (i1 > i0 && zb0 < 17.3 && sim.ballFrames[i0 * BALL_STRIDE + 1] > 0.05) onRollRef.current?.(zb0, (zb1 - zb0) * SIM_HZ);
+      }
 
       const b0 = i0 * BALL_STRIDE, b1 = i1 * BALL_STRIDE, bf = sim.ballFrames;
       ball.position.set(

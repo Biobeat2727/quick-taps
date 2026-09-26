@@ -219,6 +219,8 @@ export const poolSfx = {
 
 // ── Bowling ──────────────────────────────────────────────────────────────────
 
+const pinHitOk = limiter(40);
+
 export const bowlSfx = {
   /** The ball's roll down the lane; call set() as it travels, stop() at the pins. */
   roll(speed: number): Rumble {
@@ -226,17 +228,36 @@ export const bowlSfx = {
     r.set(0.08 + Math.min(0.25, speed * 0.025), 0.9 + speed * 0.04);
     return r;
   },
-  /** Pins scatter — n pins down this throw; big = strike-style explosion. */
-  pins(n: number, big: boolean) {
-    tone(big ? 90 : 110, big ? 0.35 : 0.2, { gain: big ? 0.55 : 0.35, glideTo: 55 });
-    noise(big ? 0.3 : 0.18, { filter: 'lowpass', freq: 1400, gain: big ? 0.35 : 0.2 });
-    const hits = Math.round(3 + n * (big ? 2.4 : 1.8));
-    for (let i = 0; i < hits; i++) {
-      const d = Math.pow(i / hits, 1.6) * (big ? 0.55 : 0.4) + rnd(0, 0.02);
-      const pan = rnd(-0.6, 0.6);
-      const g = rnd(0.12, 0.3) * (1 - (i / hits) * 0.6);
-      tone(rnd(420, 900), rnd(0.04, 0.08), { gain: g, delay: d, pan, type: 'triangle' });
-      noise(rnd(0.015, 0.035), { freq: rnd(1400, 3200), q: 3, gain: g * 0.9, delay: d, pan });
+  /**
+   * One real collision from the sim. kind: 0 ball→pin, 1 pin→pin, 2 pin→deck,
+   * 3 pin→kickback/gutter, 4 into the pit. strength 0..1, pan −1..1.
+   */
+  hit(kind: 0 | 1 | 2 | 3 | 4, strength: number, pan: number) {
+    if (!pinHitOk()) return;
+    const s = Math.max(0.05, Math.min(1, strength));
+    const g = 0.12 + s * 0.7;
+    switch (kind) {
+      case 0: // ball into pins: heavy body + hard crack
+        tone(rnd(85, 105), 0.28, { gain: g * 0.9, glideTo: 50, pan });
+        tone(rnd(420, 520), 0.07, { gain: g * 0.5, type: 'triangle', pan });
+        noise(0.06, { freq: 2200, q: 1.2, gain: g * 0.8, pan });
+        break;
+      case 1: // pin on pin: bright maple clack
+        tone(rnd(650, 1150), rnd(0.04, 0.07), { gain: g * 0.55, type: 'triangle', pan });
+        noise(rnd(0.015, 0.03), { freq: rnd(2600, 3800), q: 3, gain: g * 0.7, pan });
+        break;
+      case 2: // pin hits the deck
+        tone(rnd(170, 230), 0.1, { gain: g * 0.5, glideTo: 110, pan });
+        noise(0.04, { filter: 'lowpass', freq: 900, gain: g * 0.5, pan });
+        break;
+      case 3: // pin off the kickback / into the gutter: hollow knock
+        tone(rnd(260, 340), 0.12, { gain: g * 0.55, type: 'triangle', pan });
+        noise(0.05, { freq: 900, q: 2, gain: g * 0.55, pan });
+        break;
+      case 4: // into the pit, behind the masking: muffled
+        tone(rnd(100, 140), 0.14, { gain: g * 0.25, glideTo: 70, pan: pan * 0.5 });
+        noise(0.06, { filter: 'lowpass', freq: 400, gain: g * 0.2, pan: pan * 0.5 });
+        break;
     }
   },
   gutter() {

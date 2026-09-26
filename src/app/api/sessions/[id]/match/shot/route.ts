@@ -21,6 +21,8 @@ const Bowl = z.object({
   rec: z.object({
     numFrames: z.number().int().min(1).max(2000), ball: b64, pins: b64, impactFrame: z.number().int(), gutterFrame: z.number().int(),
     knocked: z.array(z.boolean()).length(10), speed: z.number(), spin: z.number(),
+    entry: z.object({ x: z.number(), angle: z.number() }).nullable().optional(),
+    hits: z.array(z.tuple([z.number().int(), z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3), z.literal(4)]), z.number(), z.number()])).max(400).optional(),
   }),
 });
 

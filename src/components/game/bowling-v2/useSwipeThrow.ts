@@ -31,9 +31,11 @@ export const snapAimToBoard = (aim: number) =>
  *  screensPerSec: release speed of the flick in screen-heights per second.
  */
 export function mapFlick(chord: number, arc: number, screensPerSec: number) {
-  // Speed: 6.4 m/s floor (≈14 mph — already carries), up to 9 m/s for a hard flick.
+  // Speed: 6.4 m/s floor (≈14 mph — already carries), up to 10 m/s for a hard
+  // flick. Above ~7 m/s the release starts to wander (lib/bowling/bowl-release):
+  // power is a trade against accuracy, not a free strike.
   const u = Math.max(0, Math.min(1, (screensPerSec - 0.5) / 3));
-  const speed = 6.4 + Math.sqrt(u) * 2.6;
+  const speed = 6.4 + Math.sqrt(u) * 3.6;
   // Direction: small nudge only; ±5° of flick tilt is ignored entirely.
   const DEAD = 0.09;
   const tilt = Math.sign(chord) * Math.max(0, Math.abs(chord) - DEAD);
